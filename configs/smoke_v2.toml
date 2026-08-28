@@ -1,0 +1,73 @@
+[project]
+name = "forgelm-v2-smoke"
+seed = 42
+output_dir = "artifacts/v2/smoke"
+
+[data]
+input_path = "data/sample_corpus.txt"
+validation_path = "data/sample_validation.txt"
+test_path = "data/sample_test.txt"
+min_words = 5
+min_alpha_ratio = 0.55
+validation_fraction = 0.20
+near_dedup_threshold = 0.68
+ngram_size = 3
+num_hashes = 32
+num_bands = 16
+enable_pii_masking = true
+enable_quality_rules = true
+enable_exact_dedup = true
+enable_near_dedup = true
+enable_decontamination = true
+decontamination_threshold = 0.80
+enable_model_quality = true
+quality_seed_path = "data/quality_seed.jsonl"
+quality_threshold = 0.50
+quality_hash_dim = 2048
+quality_epochs = 200
+quality_learning_rate = 0.30
+
+[tokenizer]
+vocab_size = 320
+
+[model]
+d_model = 64
+n_layers = 2
+n_heads = 4
+d_ff = 160
+max_seq_len = 64
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+qk_norm = true
+z_loss_weight = 0.00001
+rope_theta = 500000.0
+residual_scaled_init = true
+
+[training]
+steps = 40
+batch_size = 8
+seq_len = 32
+gradient_accumulation_steps = 1
+learning_rate = 0.002
+min_learning_rate_ratio = 0.10
+weight_decay = 0.01
+warmup_steps = 4
+gradient_clip = 1.0
+eval_interval = 10
+eval_batches = 6
+checkpoint_interval = 20
+device = "cpu"
+lr_schedule = "wsd"
+wsd_decay_steps = 10
+precision = "fp32"
+compile_model = false
+activation_checkpointing = false
+fused_optimizer = false
+peak_tflops = 0.0
+
+[generation]
+prompt = "A careful experiment"
+max_new_tokens = 40
+temperature = 0.8
+top_k = 20

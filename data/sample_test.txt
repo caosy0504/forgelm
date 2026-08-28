@@ -1,0 +1,11 @@
+The scientist wrote down the question before collecting any measurements. After the experiment, she compared the result with her prediction and explained the remaining uncertainty.
+
+A young fox found a lantern beside the forest path. He carried it home carefully and used its warm light to help his family read a story together.
+
+The repair guide begins by checking the power supply, then tests each connection, and finally verifies the complete system under a normal workload.
+
+When the rain stopped, three friends measured the puddles in sunny and shaded places. They recorded the depth every hour until the water disappeared.
+
+一个好的数据实验需要固定训练集、验证集和测试集，并在最终配置确定以前封存测试集。
+
+模型训练完成以后，应当先在验证集上选择最佳检查点，再用从未参与调参的测试集报告最终结果。

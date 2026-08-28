@@ -1,0 +1,50 @@
+{
+  "dataset": "TinyStories 5M-character course sample",
+  "delimiter": "<|endoftext|>",
+  "discarded_first_fragment": true,
+  "discarded_trailing_fragment": true,
+  "empty_segments": 0,
+  "exact_cross_split_overlap": {
+    "train_test": 0,
+    "train_validation": 0,
+    "validation_test": 0
+  },
+  "exact_duplicates_removed_before_split": 0,
+  "format_version": 1,
+  "fractions": {
+    "test": 0.05,
+    "train": 0.9,
+    "validation": 0.05
+  },
+  "license": "CDLA-Sharing-1.0",
+  "paper": "https://arxiv.org/abs/2305.07759",
+  "seed": 42,
+  "source_filename": "tinystories_sample_5M.txt",
+  "source_segments": 6458,
+  "source_sha256": "7cc2577b9e1f9ed703b13ca651103bf421c91912fcbcb2d024213858e0981d87",
+  "source_url": "https://huggingface.co/datasets/roneneldan/TinyStories",
+  "splits": {
+    "test": {
+      "characters": 253202,
+      "documents": 323,
+      "path": "test.txt",
+      "sha256": "1d8f9b7d7dc7af8e3e24e819c4433d39885c6960a394af510ea3d794c1665465",
+      "words": 50756
+    },
+    "train": {
+      "characters": 4630053,
+      "documents": 5810,
+      "path": "train.txt",
+      "sha256": "58e0e9f94b6f45678ce3f02a7e68fe6b7efcb4b1b66e572a8311b4866761fd1d",
+      "words": 925079
+    },
+    "validation": {
+      "characters": 257176,
+      "documents": 323,
+      "path": "validation.txt",
+      "sha256": "afef4e5387ceeeb5f95ffd8c78bbc1701d7fb3aab97418b3a01a2b7aa40b0af5",
+      "words": 51422
+    }
+  },
+  "unique_complete_stories": 6456
+}

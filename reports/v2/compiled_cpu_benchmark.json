@@ -1,0 +1,28 @@
+{
+  "baseline": {
+    "elapsed_seconds": 0.040929791983217,
+    "iterations": 12.0,
+    "precision": "fp32",
+    "step_time_ms": 3.4108159986014166,
+    "tokens_per_second": 75055.35335385174
+  },
+  "batch_size": 8,
+  "device": "cpu",
+  "features": {
+    "activation_checkpointing": false,
+    "attention": "sdpa",
+    "compile_model": true,
+    "precision": "bf16"
+  },
+  "max_forward_absolute_error": 3.5762786865234375e-07,
+  "optimized": {
+    "elapsed_seconds": 0.11474045808427036,
+    "iterations": 12.0,
+    "precision": "bf16",
+    "step_time_ms": 9.561704840355864,
+    "tokens_per_second": 26773.46814968954
+  },
+  "optimized_speedup": 0.3567163027461193,
+  "parameter_count": 115072,
+  "seq_len": 32
+}

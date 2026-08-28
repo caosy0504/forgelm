@@ -1,0 +1,49 @@
+[project]
+name = "forgelm-tiny"
+seed = 42
+output_dir = "artifacts/tiny"
+
+[data]
+input_path = "data/sample_corpus.txt"
+min_words = 5
+min_alpha_ratio = 0.55
+validation_fraction = 0.20
+near_dedup_threshold = 0.88
+ngram_size = 3
+num_hashes = 64
+num_bands = 8
+
+[tokenizer]
+vocab_size = 512
+
+[model]
+d_model = 192
+n_layers = 4
+n_heads = 6
+d_ff = 512
+max_seq_len = 128
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+
+[training]
+steps = 500
+batch_size = 16
+seq_len = 96
+gradient_accumulation_steps = 2
+learning_rate = 0.0006
+min_learning_rate_ratio = 0.10
+weight_decay = 0.10
+warmup_steps = 30
+gradient_clip = 1.0
+eval_interval = 25
+eval_batches = 10
+checkpoint_interval = 100
+device = "auto"
+
+[generation]
+prompt = "Once upon a time"
+max_new_tokens = 100
+temperature = 0.8
+top_k = 40
+

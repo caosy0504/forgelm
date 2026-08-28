@@ -1,0 +1,49 @@
+[project]
+name = "forgelm-smoke"
+seed = 42
+output_dir = "artifacts/smoke"
+
+[data]
+input_path = "data/sample_corpus.txt"
+min_words = 5
+min_alpha_ratio = 0.55
+validation_fraction = 0.20
+near_dedup_threshold = 0.88
+ngram_size = 3
+num_hashes = 32
+num_bands = 8
+
+[tokenizer]
+vocab_size = 320
+
+[model]
+d_model = 64
+n_layers = 2
+n_heads = 4
+d_ff = 160
+max_seq_len = 64
+dropout = 0.0
+attention_impl = "eager"
+tie_embeddings = true
+
+[training]
+steps = 30
+batch_size = 8
+seq_len = 32
+gradient_accumulation_steps = 1
+learning_rate = 0.002
+min_learning_rate_ratio = 0.10
+weight_decay = 0.01
+warmup_steps = 3
+gradient_clip = 1.0
+eval_interval = 10
+eval_batches = 4
+checkpoint_interval = 15
+device = "cpu"
+
+[generation]
+prompt = "Once upon a time"
+max_new_tokens = 40
+temperature = 0.8
+top_k = 20
+

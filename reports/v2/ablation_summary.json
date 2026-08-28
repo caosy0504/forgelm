@@ -1,0 +1,63 @@
+{
+  "config": "configs/smoke_v2.toml",
+  "equal_training_step_budget": 40,
+  "experiment": "controlled_data_ablation",
+  "interpretation_note": "Smoke-scale results validate causal controls; use a real corpus and multiple seeds for claims.",
+  "shared_test_sha256": "126f6de7ada36d2fbb384e7a54a03d4ca9fc985b0c619b8112c23b874ee6adf9",
+  "shared_tokenizer_sha256": "54703bc24f3a0979b7d8e395ab999419b2fee7d91b7831ea5d874d625f4967c0",
+  "shared_validation_sha256": "c3370b141f94fc22566b5a85bee77aea7d8e51d09ca950753c5237cf1179feb5",
+  "variants": [
+    {
+      "decontaminated_documents_dropped": 0,
+      "exact_duplicates_dropped": 0,
+      "final_validation_loss": 4.536207278569539,
+      "final_validation_perplexity": 93.33613002161712,
+      "initial_validation_loss": 5.803666353225708,
+      "model_quality_dropped": 0,
+      "near_duplicates_dropped": 0,
+      "tokenizer_sha256": "54703bc24f3a0979b7d8e395ab999419b2fee7d91b7831ea5d874d625f4967c0",
+      "train_documents": 40,
+      "train_tokens": 3812,
+      "variant": "raw"
+    },
+    {
+      "decontaminated_documents_dropped": 0,
+      "exact_duplicates_dropped": 0,
+      "final_validation_loss": 4.536207278569539,
+      "final_validation_perplexity": 93.33613002161712,
+      "initial_validation_loss": 5.803666353225708,
+      "model_quality_dropped": 0,
+      "near_duplicates_dropped": 0,
+      "tokenizer_sha256": "54703bc24f3a0979b7d8e395ab999419b2fee7d91b7831ea5d874d625f4967c0",
+      "train_documents": 40,
+      "train_tokens": 3812,
+      "variant": "heuristic"
+    },
+    {
+      "decontaminated_documents_dropped": 0,
+      "exact_duplicates_dropped": 1,
+      "final_validation_loss": 4.440325895945231,
+      "final_validation_perplexity": 84.8025739859614,
+      "initial_validation_loss": 5.803666353225708,
+      "model_quality_dropped": 0,
+      "near_duplicates_dropped": 1,
+      "tokenizer_sha256": "54703bc24f3a0979b7d8e395ab999419b2fee7d91b7831ea5d874d625f4967c0",
+      "train_documents": 38,
+      "train_tokens": 3628,
+      "variant": "dedup"
+    },
+    {
+      "decontaminated_documents_dropped": 0,
+      "exact_duplicates_dropped": 1,
+      "final_validation_loss": 4.576133966445923,
+      "final_validation_perplexity": 97.13812808441781,
+      "initial_validation_loss": 5.803666353225708,
+      "model_quality_dropped": 5,
+      "near_duplicates_dropped": 1,
+      "tokenizer_sha256": "54703bc24f3a0979b7d8e395ab999419b2fee7d91b7831ea5d874d625f4967c0",
+      "train_documents": 33,
+      "train_tokens": 3183,
+      "variant": "model_quality"
+    }
+  ]
+}

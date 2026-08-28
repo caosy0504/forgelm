@@ -1,0 +1,15 @@
+[
+  {"compute_budget": 1000000000000000.0, "parameters": 2000000, "final_loss": 4.20},
+  {"compute_budget": 1000000000000000.0, "parameters": 4000000, "final_loss": 3.95},
+  {"compute_budget": 1000000000000000.0, "parameters": 8000000, "final_loss": 4.08},
+  {"compute_budget": 4000000000000000.0, "parameters": 4000000, "final_loss": 3.78},
+  {"compute_budget": 4000000000000000.0, "parameters": 8000000, "final_loss": 3.52},
+  {"compute_budget": 4000000000000000.0, "parameters": 16000000, "final_loss": 3.66},
+  {"compute_budget": 16000000000000000.0, "parameters": 8000000, "final_loss": 3.40},
+  {"compute_budget": 16000000000000000.0, "parameters": 16000000, "final_loss": 3.12},
+  {"compute_budget": 16000000000000000.0, "parameters": 32000000, "final_loss": 3.29},
+  {"compute_budget": 64000000000000000.0, "parameters": 16000000, "final_loss": 3.03},
+  {"compute_budget": 64000000000000000.0, "parameters": 32000000, "final_loss": 2.78},
+  {"compute_budget": 64000000000000000.0, "parameters": 64000000, "final_loss": 2.91}
+]
+

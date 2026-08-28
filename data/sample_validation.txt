@@ -1,0 +1,11 @@
+A careful experiment begins with a clear question and a measurement plan. Results should be reported with uncertainty and enough detail for another person to repeat the work.
+
+The city library created a public catalog that records each book's author, subject, publication date, and current location without exposing private borrower information.
+
+Engineers compared two bridge designs under identical simulated loads. They measured displacement, material stress, and recovery after the load was removed.
+
+The mathematics lesson explains probability with coins and dice before introducing formal notation. Each exercise includes a short justification rather than only a final answer.
+
+一份可靠的实验报告需要说明研究问题、数据来源、控制变量、评价指标以及可能影响结论的局限性。
+
+技术人员先复现故障，再分别检查输入数据、计算过程和输出结果，从而确定问题出现在哪一个环节。

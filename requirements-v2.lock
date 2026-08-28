@@ -1,0 +1,4 @@
+# Verified modern local environment for ForgeLM V2.
+# Install PyTorch using the wheel/index appropriate for the target accelerator.
+numpy==2.5.0
+torch==2.13.0
