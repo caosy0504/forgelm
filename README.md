@@ -350,10 +350,10 @@ Local validation additionally covers Python 3.13/PyTorch 2.13 compiled execution
 - Add instruction SFT/LoRA as an explicitly separate post-training stage.
 - Run real multi-budget scaling experiments with confidence intervals.
 
-## Documentation
+## Supplementary Documentation
 
-- [个人使用与训练说明](./个人使用与训练说明.md): beginner-oriented installation, training, evaluation, GPU, and troubleshooting guide.
-- [V2 改进原理说明](./V2改进原理说明.md): detailed explanation of data, reproducibility, model-stability, and systems changes.
+- [个人使用与训练说明](./个人使用与训练说明.md): personal beginner-oriented installation, training, evaluation, GPU, and troubleshooting manual.
+- [V2 改进原理说明](./V2改进原理说明.md): personal study notes explaining data, reproducibility, model-stability, and systems changes.
 - [TinyStories dataset card](./data/tinystories_5m/DATASET_CARD.md): provenance, license, and split policy.
 
 ## Selected References
