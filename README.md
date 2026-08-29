@@ -313,9 +313,7 @@ Commands write machine-readable summaries under the configured artifact director
 │   ├── chat.py              # Interactive completion formatting
 │   ├── pipeline.py          # End-to-end orchestration and ablations
 │   └── cli.py               # Command-line interface
-├── tests/                   # 24 unit and integration tests
-├── 个人使用与训练说明.md       # Beginner-oriented operating guide
-└── V2改进原理说明.md          # Detailed V1-to-V2 rationale
+└── tests/                   # 24 unit and integration tests
 ```
 
 ## Verification Status
@@ -349,12 +347,6 @@ Local validation additionally covers Python 3.13/PyTorch 2.13 compiled execution
 - Export model-only checkpoints in a portable safe-tensor format.
 - Add instruction SFT/LoRA as an explicitly separate post-training stage.
 - Run real multi-budget scaling experiments with confidence intervals.
-
-## Supplementary Documentation
-
-- [个人使用与训练说明](./个人使用与训练说明.md): personal beginner-oriented installation, training, evaluation, GPU, and troubleshooting manual.
-- [V2 改进原理说明](./V2改进原理说明.md): personal study notes explaining data, reproducibility, model-stability, and systems changes.
-- [TinyStories dataset card](./data/tinystories_5m/DATASET_CARD.md): provenance, license, and split policy.
 
 ## Selected References
 

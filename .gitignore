@@ -7,3 +7,5 @@ artifacts/
 *.pt
 *.bin
 PRIVATE_PROJECT_GUIDE.zh-CN.md
+个人使用与训练说明.md
+V2改进原理说明.md
