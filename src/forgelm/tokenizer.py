@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import heapq
 import re
 from collections import Counter
 from pathlib import Path
@@ -19,6 +20,7 @@ class BytePairTokenizer:
 
     def __init__(self, merges: list[tuple[int, int]] | None = None) -> None:
         self.merges = list(merges or [])
+        self._merge_rules = {pair: rank for rank, pair in enumerate(self.merges)}
         self._id_to_bytes: dict[int, bytes] = {index: bytes([index]) for index in range(256)}
         for token_id, (left, right) in enumerate(self.merges, start=self.FIRST_MERGE_ID):
             self._id_to_bytes[token_id] = self._id_to_bytes[left] + self._id_to_bytes[right]
@@ -77,13 +79,51 @@ class BytePairTokenizer:
     def encode(self, text: str, *, add_eos: bool = False) -> list[int]:
         encoded: list[int] = []
         for piece in self._pretokenize(text):
-            tokens = list(piece)
-            for merge_index, pair in enumerate(self.merges, start=self.FIRST_MERGE_ID):
-                tokens = self._merge_pair(tokens, pair, merge_index)
-            encoded.extend(tokens)
+            encoded.extend(self._encode_piece(piece))
         if add_eos:
             encoded.append(self.EOS_ID)
         return encoded
+
+    def _encode_piece(self, piece: bytes) -> list[int]:
+        tokens = list(piece)
+        if len(tokens) < 2 or not self.merges:
+            return tokens
+        next_index = list(range(1, len(tokens))) + [-1]
+        previous_index = [-1] + list(range(len(tokens) - 1))
+        heap: list[tuple[int, int, int, int]] = []
+
+        def offer(left: int) -> None:
+            if left < 0 or next_index[left] < 0:
+                return
+            right = next_index[left]
+            rank = self._merge_rules.get((tokens[left], tokens[right]))
+            if rank is not None:
+                heapq.heappush(heap, (rank, left, tokens[left], tokens[right]))
+
+        for index in range(len(tokens) - 1):
+            offer(index)
+        while heap:
+            rank, left, left_id, right_id = heapq.heappop(heap)
+            right = next_index[left]
+            if right < 0 or tokens[left] != left_id or tokens[right] != right_id:
+                continue
+            if self._merge_rules.get((left_id, right_id)) != rank:
+                continue
+            tokens[left] = self.FIRST_MERGE_ID + rank
+            following = next_index[right]
+            next_index[left] = following
+            if following >= 0:
+                previous_index[following] = left
+            next_index[right] = -1
+            previous_index[right] = -1
+            offer(previous_index[left])
+            offer(left)
+        result: list[int] = []
+        index = 0
+        while index >= 0:
+            result.append(tokens[index])
+            index = next_index[index]
+        return result
 
     def decode(self, token_ids: Iterable[int], *, skip_special_tokens: bool = True) -> str:
         chunks: list[bytes] = []
@@ -117,4 +157,3 @@ class BytePairTokenizer:
         if payload.get("type") != "byte_bpe" or payload.get("version") != 1:
             raise ValueError("unsupported tokenizer format")
         return cls([tuple(map(int, pair)) for pair in payload["merges"]])
-

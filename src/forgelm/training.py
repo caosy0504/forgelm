@@ -14,6 +14,8 @@ from torch.nn import functional as F
 from .config import ModelConfig, TrainingConfig
 from .model import TransformerLM
 from .reproducibility import environment_metadata, resolve_device, set_seed
+from .sampling import DocumentSpan, DocumentWindowSampler
+from .fingerprint import sha256_file
 
 
 def encode_documents(texts: Iterable[str], tokenizer: Any) -> torch.Tensor:
@@ -80,6 +82,8 @@ class Trainer:
         artifact_dir: str | Path,
         reset_metrics: bool = True,
         run_fingerprint: dict[str, Any] | None = None,
+        train_spans: list[DocumentSpan] | None = None,
+        validation_spans: list[DocumentSpan] | None = None,
     ) -> None:
         self.config = config
         self.seed = seed
@@ -92,6 +96,27 @@ class Trainer:
         self.execution_model = torch.compile(self.model) if config.compile_model else self.model
         self.train_tokens = train_tokens.cpu()
         self.validation_tokens = validation_tokens.cpu()
+        self.validation_sampler = (
+            DocumentWindowSampler(
+                self.validation_tokens,
+                validation_spans,
+                config.seq_len,
+                policy="document_uniform",
+                tier_probabilities=(1.0, 0.0, 0.0),
+            )
+            if validation_spans is not None else None
+        )
+        self.document_sampler = None
+        if config.sampling_policy != "stream_uniform":
+            if train_spans is None:
+                raise ValueError("document sampling requires encoded document spans")
+            self.document_sampler = DocumentWindowSampler(
+                self.train_tokens,
+                train_spans,
+                config.seq_len,
+                policy=config.sampling_policy,
+                tier_probabilities=tuple(config.quality_tier_probabilities),
+            )
         if config.fused_optimizer and self.device.type != "cuda":
             raise RuntimeError("fused AdamW is only enabled for CUDA in ForgeLM")
         self.optimizer = torch.optim.AdamW(
@@ -109,6 +134,7 @@ class Trainer:
             self.metrics_path.write_text("", encoding="utf-8")
         self.train_generator = torch.Generator(device="cpu").manual_seed(seed)
         self.run_fingerprint = run_fingerprint
+        self.parent_checkpoint: dict[str, Any] | None = None
 
     def _autocast_context(self):
         if self.config.precision == "bf16":
@@ -132,13 +158,18 @@ class Trainer:
         generator = torch.Generator(device="cpu").manual_seed(self.seed + 10_000)
         losses: list[float] = []
         for _ in range(self.config.eval_batches):
-            inputs, targets = sample_batch(
-                self.validation_tokens,
-                batch_size=self.config.batch_size,
-                seq_len=self.config.seq_len,
-                device=self.device,
-                generator=generator,
-            )
+            if self.validation_sampler is None:
+                inputs, targets = sample_batch(
+                    self.validation_tokens,
+                    batch_size=self.config.batch_size,
+                    seq_len=self.config.seq_len,
+                    device=self.device,
+                    generator=generator,
+                )
+            else:
+                inputs, targets = self.validation_sampler.sample_batch(
+                    self.config.batch_size, self.device, generator
+                )
             with self._autocast_context():
                 logits, loss = self.execution_model(inputs, targets)
             assert loss is not None
@@ -158,7 +189,10 @@ class Trainer:
                 "model_state": self.model.state_dict(),
                 "optimizer_state": self.optimizer.state_dict(),
                 "train_generator_state": self.train_generator.get_state(),
+                "train_tier_draw_counts": self.document_sampler.tier_draw_counts
+                if self.document_sampler is not None else None,
                 "run_fingerprint": self.run_fingerprint,
+                "parent_checkpoint": self.parent_checkpoint,
             },
             path,
         )
@@ -178,16 +212,63 @@ class Trainer:
                 raise ValueError(f"resume fingerprint mismatch: expected {expected}, checkpoint has {actual}")
         self.model.load_state_dict(checkpoint["model_state"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state"])
-        self.train_generator.set_state(checkpoint["train_generator_state"])
+        self.train_generator.set_state(checkpoint["train_generator_state"].cpu())
+        if self.document_sampler is not None and checkpoint.get("train_tier_draw_counts") is not None:
+            self.document_sampler.tier_draw_counts = list(checkpoint["train_tier_draw_counts"])
         self.step = int(checkpoint["step"])
+        self.parent_checkpoint = checkpoint.get("parent_checkpoint")
 
-    def train(self) -> dict[str, Any]:
+    def fork_from_checkpoint(self, path: str | Path) -> None:
+        """Start a new run from a common prefix while changing only sampling policy."""
+        source = Path(path)
+        checkpoint = torch.load(source, map_location=self.device, weights_only=False)
+        if checkpoint.get("format_version") != 1 or self.run_fingerprint is None:
+            raise ValueError("fork requires a versioned checkpoint and a current run fingerprint")
+        parent = checkpoint.get("run_fingerprint")
+        if not isinstance(parent, dict) or "contract" not in parent:
+            raise ValueError("fork parent lacks a run contract")
+        expected = self.run_fingerprint["contract"]
+        actual = parent["contract"]
+        for key in ("dataset", "tokenizer_sha256", "quality_model_sha256", "model_config", "seed", "source_sha256"):
+            if actual.get(key) != expected.get(key):
+                raise ValueError(f"fork contract mismatch: {key}")
+        old_training = dict(actual["training_config"])
+        new_training = dict(expected["training_config"])
+        old_training.pop("sampling_policy", None)
+        new_training.pop("sampling_policy", None)
+        if old_training != new_training:
+            raise ValueError("fork training config may only change sampling_policy")
+        if int(checkpoint["step"]) >= self.config.steps:
+            raise ValueError("fork checkpoint must precede the configured final step")
+        self.model.load_state_dict(checkpoint["model_state"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state"])
+        self.train_generator.set_state(checkpoint["train_generator_state"].cpu())
+        self.step = int(checkpoint["step"])
+        expected_lr = learning_rate_for_step(self.step - 1, self.config)
+        if any(abs(group["lr"] - expected_lr) > max(1e-12, abs(expected_lr) * 1e-6) for group in self.optimizer.param_groups):
+            raise ValueError("fork optimizer learning rate differs from the shared schedule")
+        self.parent_checkpoint = {
+            "sha256": sha256_file(source),
+            "step": self.step,
+            "fingerprint_id": parent["fingerprint_id"],
+            "sampling_policy": actual["training_config"]["sampling_policy"],
+        }
+
+    def train(self, *, stop_step: int | None = None) -> dict[str, Any]:
+        target_step = self.config.steps if stop_step is None else stop_step
+        if not self.step < target_step <= self.config.steps:
+            raise ValueError("stop_step must be after the current step and no later than training.steps")
         start_wall_time = time.perf_counter()
+        starting_step = self.step
+        maximum_peak_memory = 0
+        starting_tier_counts = (
+            list(self.document_sampler.tier_draw_counts) if self.document_sampler is not None else None
+        )
         initial_validation_loss = self.evaluate()
         self._write_metric({"step": self.step, "split": "validation", "loss": initial_validation_loss})
         last_validation_loss = initial_validation_loss
 
-        while self.step < self.config.steps:
+        while self.step < target_step:
             step_start = time.perf_counter()
             self.model.train()
             self.optimizer.zero_grad(set_to_none=True)
@@ -200,13 +281,18 @@ class Trainer:
             if self.device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats(self.device)
             for _ in range(self.config.gradient_accumulation_steps):
-                inputs, targets = sample_batch(
-                    self.train_tokens,
-                    batch_size=self.config.batch_size,
-                    seq_len=self.config.seq_len,
-                    device=self.device,
-                    generator=self.train_generator,
-                )
+                if self.document_sampler is None:
+                    inputs, targets = sample_batch(
+                        self.train_tokens,
+                        batch_size=self.config.batch_size,
+                        seq_len=self.config.seq_len,
+                        device=self.device,
+                        generator=self.train_generator,
+                    )
+                else:
+                    inputs, targets = self.document_sampler.sample_batch(
+                        self.config.batch_size, self.device, self.train_generator
+                    )
                 with self._autocast_context():
                     logits, loss = self.execution_model(inputs, targets)
                 assert loss is not None
@@ -228,6 +314,8 @@ class Trainer:
                 6.0 * self.model.parameter_count(non_embedding=True) * tokens_this_step / elapsed / 1e12
             )
             peak_memory = self._peak_memory_bytes()
+            if peak_memory is not None:
+                maximum_peak_memory = max(maximum_peak_memory, peak_memory)
             train_metric: dict[str, Any] = {
                 "step": self.step,
                 "split": "train",
@@ -247,19 +335,37 @@ class Trainer:
                 train_metric
             )
 
-            if self.step % self.config.eval_interval == 0 or self.step == self.config.steps:
+            if self.step % self.config.eval_interval == 0 or self.step == target_step:
                 last_validation_loss = self.evaluate()
                 self._write_metric({"step": self.step, "split": "validation", "loss": last_validation_loss})
             if self.step % self.config.checkpoint_interval == 0:
                 self.save_checkpoint(f"checkpoint_step_{self.step:06d}.pt")
 
         checkpoint_path = self.save_checkpoint()
+        wall_time = max(time.perf_counter() - start_wall_time, 1e-9)
+        tokens_per_step = self.config.batch_size * self.config.seq_len * self.config.gradient_accumulation_steps
+        sampled_tokens_this_run = (self.step - starting_step) * tokens_per_step
+        sampled_tokens_total = self.step * tokens_per_step
+        tier_draw_counts = (
+            [current - previous for current, previous in zip(
+                self.document_sampler.tier_draw_counts, starting_tier_counts, strict=True
+            )]
+            if self.document_sampler is not None and starting_tier_counts is not None else None
+        )
         summary = {
             "initial_validation_loss": initial_validation_loss,
             "final_validation_loss": last_validation_loss,
             "final_validation_perplexity": math.exp(min(last_validation_loss, 20.0)),
             "steps": self.step,
-            "wall_time_seconds": time.perf_counter() - start_wall_time,
+            "configured_steps": self.config.steps,
+            "sampled_tokens_this_run": sampled_tokens_this_run,
+            "sampled_tokens_total": sampled_tokens_total,
+            "sampled_to_unique_token_ratio": sampled_tokens_total / int(self.train_tokens.numel()),
+            "tier_draw_counts_this_run": tier_draw_counts,
+            "end_to_end_sampled_tokens_per_second": sampled_tokens_this_run / wall_time,
+            "max_peak_memory_bytes": maximum_peak_memory if maximum_peak_memory else None,
+            "parent_checkpoint": self.parent_checkpoint,
+            "wall_time_seconds": wall_time,
             "parameter_count": self.model.parameter_count(),
             "non_embedding_parameter_count": self.model.parameter_count(non_embedding=True),
             "train_tokens": int(self.train_tokens.numel()),

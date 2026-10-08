@@ -8,6 +8,18 @@ from forgelm.tokenizer import BytePairTokenizer
 
 
 class TokenizerTests(unittest.TestCase):
+    def test_ranked_encoder_matches_reference_merge_order(self) -> None:
+        tokenizer = BytePairTokenizer.train(
+            ["repeated patterns make byte pair encoding testable", "encoding patterns repeat"], 300
+        )
+        for text in ("repeated patterns", "encoding testable", "未知の文字 and emoji 🙂"):
+            reference = []
+            for piece in tokenizer._pretokenize(text):
+                tokens = list(piece)
+                for rank, pair in enumerate(tokenizer.merges, start=tokenizer.FIRST_MERGE_ID):
+                    tokens = tokenizer._merge_pair(tokens, pair, rank)
+                reference.extend(tokens)
+            self.assertEqual(tokenizer.encode(text), reference)
     def test_unicode_round_trip(self) -> None:
         texts = ["hello hello world", "你好，世界", "naïve café", "hello tokenizer"]
         tokenizer = BytePairTokenizer.train(texts, vocab_size=280)
@@ -27,4 +39,3 @@ class TokenizerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

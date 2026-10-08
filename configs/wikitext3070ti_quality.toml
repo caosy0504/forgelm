@@ -1,0 +1,71 @@
+[project]
+name = "forgelm-wikitext-quality"
+seed = 42
+output_dir = "artifacts/wikitext3070ti/quality"
+
+[data]
+input_path = "data/wikitext103_articles/train.txt"
+validation_path = "data/wikitext103_articles/validation.txt"
+test_path = "data/wikitext103_articles/test.txt"
+min_words = 20
+min_alpha_ratio = 0.55
+validation_fraction = 0.10
+near_dedup_threshold = 0.82
+ngram_size = 5
+num_hashes = 64
+num_bands = 16
+enable_pii_masking = true
+enable_quality_rules = true
+enable_exact_dedup = true
+enable_near_dedup = true
+enable_decontamination = true
+decontamination_threshold = 0.80
+enable_model_quality = false
+
+[tokenizer]
+vocab_size = 2048
+max_training_characters = 2000000
+
+[model]
+d_model = 512
+n_layers = 8
+n_heads = 8
+d_ff = 1408
+max_seq_len = 1024
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+qk_norm = true
+z_loss_weight = 0.00001
+rope_theta = 500000.0
+residual_scaled_init = true
+
+[training]
+steps = 1000
+batch_size = 2
+seq_len = 512
+gradient_accumulation_steps = 16
+learning_rate = 0.0006
+min_learning_rate_ratio = 0.10
+weight_decay = 0.10
+warmup_steps = 50
+gradient_clip = 1.0
+eval_interval = 100
+eval_batches = 20
+checkpoint_interval = 200
+device = "cuda"
+lr_schedule = "wsd"
+wsd_decay_steps = 100
+precision = "bf16"
+compile_model = false
+activation_checkpointing = true
+fused_optimizer = true
+peak_tflops = 0.0
+sampling_policy = "quality_tier"
+quality_tier_probabilities = [0.1, 0.3, 0.6]
+
+[generation]
+prompt = "The history of science"
+max_new_tokens = 128
+temperature = 0.8
+top_k = 50

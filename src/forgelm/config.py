@@ -60,10 +60,13 @@ class DataConfig:
 @dataclass(frozen=True)
 class TokenizerConfig:
     vocab_size: int = 512
+    max_training_characters: int = 0
 
     def validate(self) -> None:
         if self.vocab_size < 258:
             raise ValueError("tokenizer.vocab_size must leave room for 256 bytes plus special tokens")
+        if self.max_training_characters < 0:
+            raise ValueError("tokenizer.max_training_characters must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,8 @@ class TrainingConfig:
     activation_checkpointing: bool = False
     fused_optimizer: bool = False
     peak_tflops: float = 0.0
+    sampling_policy: str = "stream_uniform"
+    quality_tier_probabilities: tuple[float, float, float] = (0.1, 0.3, 0.6)
 
     def validate(self, model: ModelConfig) -> None:
         integer_fields = (
@@ -150,6 +155,14 @@ class TrainingConfig:
             raise ValueError("training.precision must be 'fp32' or 'bf16'")
         if self.peak_tflops < 0:
             raise ValueError("training.peak_tflops must be non-negative")
+        if self.sampling_policy not in {"stream_uniform", "document_uniform", "quality_tier"}:
+            raise ValueError("training.sampling_policy is invalid")
+        if (
+            len(self.quality_tier_probabilities) != 3
+            or any(value < 0 for value in self.quality_tier_probabilities)
+            or abs(sum(self.quality_tier_probabilities) - 1.0) > 1e-9
+        ):
+            raise ValueError("training.quality_tier_probabilities must contain three probabilities summing to one")
 
 
 @dataclass(frozen=True)

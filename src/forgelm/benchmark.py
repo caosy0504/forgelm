@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from torch.nn import functional as F
 
 from .config import ModelConfig
 from .model import TransformerLM
@@ -29,7 +30,7 @@ def _time_model(
     warmup: int,
     iterations: int,
     precision: str = "fp32",
-) -> dict[str, float | str]:
+) -> dict[str, float | str | int]:
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
     autocast = (
         (lambda: torch.autocast(device_type=inputs.device.type, dtype=torch.bfloat16))
@@ -42,6 +43,8 @@ def _time_model(
             _, loss = model(inputs, targets)
         assert loss is not None
         loss.backward()
+    if inputs.device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(inputs.device)
     synchronize(inputs.device)
     start = time.perf_counter()
     for _ in range(iterations):
@@ -53,13 +56,37 @@ def _time_model(
     synchronize(inputs.device)
     elapsed = time.perf_counter() - start
     tokens = inputs.numel() * iterations
-    return {
+    result = {
         "iterations": float(iterations),
         "elapsed_seconds": elapsed,
         "step_time_ms": 1000.0 * elapsed / iterations,
         "tokens_per_second": tokens / elapsed,
         "precision": precision,
     }
+    if inputs.device.type == "cuda":
+        result["peak_memory_bytes"] = int(torch.cuda.max_memory_allocated(inputs.device))
+    return result
+
+
+def probe_flash_attention(
+    config: ModelConfig, *, batch_size: int, seq_len: int, device: torch.device, precision: str
+) -> dict[str, Any]:
+    if device.type != "cuda":
+        return {"status": "not_cuda"}
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+    head_dim = config.d_model // config.n_heads
+    query = torch.randn(batch_size, config.n_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True)
+    key = torch.randn_like(query, requires_grad=True)
+    value = torch.randn_like(query, requires_grad=True)
+    try:
+        with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION]):
+            output = F.scaled_dot_product_attention(query, key, value, is_causal=True)
+            output.float().sum().backward()
+        return {"status": "flash_forward_backward_available", "dtype": str(dtype), "head_dim": head_dim}
+    except (RuntimeError, ValueError, NotImplementedError) as error:
+        return {"status": "unavailable", "reason": f"{type(error).__name__}: {error}"}
 
 
 def benchmark_attention_implementations(
@@ -147,6 +174,10 @@ def benchmark_modern_training_stack(
         "batch_size": batch_size,
         "seq_len": seq_len,
         "parameter_count": baseline.parameter_count(),
+        "vocab_size": config.vocab_size,
+        "flash_attention_probe": probe_flash_attention(
+            config, batch_size=batch_size, seq_len=seq_len, device=device, precision=precision
+        ),
         "max_forward_absolute_error": max_error,
         "baseline": _time_model(
             baseline, inputs, targets, warmup=warmup, iterations=iterations, precision="fp32"
