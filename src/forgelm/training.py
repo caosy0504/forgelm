@@ -338,7 +338,7 @@ class Trainer:
             if self.step % self.config.eval_interval == 0 or self.step == target_step:
                 last_validation_loss = self.evaluate()
                 self._write_metric({"step": self.step, "split": "validation", "loss": last_validation_loss})
-            if self.step % self.config.checkpoint_interval == 0:
+            if self.step % self.config.checkpoint_interval == 0 and self.step != target_step:
                 self.save_checkpoint(f"checkpoint_step_{self.step:06d}.pt")
 
         checkpoint_path = self.save_checkpoint()

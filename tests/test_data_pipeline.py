@@ -7,6 +7,7 @@ from pathlib import Path
 from forgelm.config import DataConfig
 from forgelm.data_pipeline import (
     Document,
+    decontaminate_documents,
     mask_pii,
     near_deduplicate,
     normalized_words,
@@ -15,6 +16,16 @@ from forgelm.data_pipeline import (
 
 
 class DataPipelineTests(unittest.TestCase):
+    def test_decontamination_uses_exact_jaccard_after_length_filter(self) -> None:
+        validation = [Document("v", "alpha beta gamma delta epsilon zeta eta theta", "val", {})]
+        train = [
+            Document("same", "alpha beta gamma delta epsilon zeta eta theta", "train", {}),
+            Document("other", "mountain river forest ocean weather climate geology", "train", {}),
+        ]
+        kept, dropped = decontaminate_documents(train, validation, threshold=0.8, ngram_size=2)
+        self.assertEqual([document.doc_id for document in kept], ["other"])
+        self.assertEqual(dropped, 1)
+
     def test_test_path_requires_explicit_validation_path(self) -> None:
         config = DataConfig(input_path="train.txt", test_path="test.txt")
         with self.assertRaisesRegex(ValueError, "requires an explicit"):

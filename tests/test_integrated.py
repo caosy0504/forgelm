@@ -14,7 +14,10 @@ from forgelm.evaluation import evaluate_checkpoint
 from forgelm.fingerprint import sha256_file
 from forgelm.model import TransformerLM
 from forgelm.pipeline import run_pipeline
-from forgelm.sampling import DocumentSpan, DocumentWindowSampler, encode_documents_with_spans
+from forgelm.sampling import (
+    DocumentSpan, DocumentWindowSampler, encode_documents_with_spans, prose_quality_features,
+    rescore_document_spans,
+)
 from forgelm.tokenizer import BytePairTokenizer
 from forgelm.training import Trainer
 from forgelm.wikitext import CONFIG, DATASET, REVISION, iter_articles, prepare_wikitext
@@ -28,6 +31,19 @@ def model_config() -> ModelConfig:
 
 
 class IntegratedTests(unittest.TestCase):
+    def test_quality_diversity_uses_fixed_windows_not_whole_article_ratio(self) -> None:
+        words = ["w" + chr(97 + index // 26) + chr(97 + index % 26) for index in range(256)]
+        short = prose_quality_features(" ".join(words))
+        long = prose_quality_features(" ".join(words * 4))
+        self.assertAlmostEqual(short["unique_word_ratio"], long["unique_word_ratio"])
+
+    def test_rescoring_preserves_token_boundaries(self) -> None:
+        texts = ["One short sentence with words.", "A second useful sentence with many words."]
+        spans = [DocumentSpan(0, 30, 0.0), DocumentSpan(30, 70, 0.0)]
+        rescored = rescore_document_spans(texts, spans, 4)
+        self.assertEqual([(item.start, item.end) for item in rescored], [(0, 30), (30, 70)])
+        self.assertTrue(all(item.score > 0 for item in rescored))
+
     def test_preparation_is_reused_and_detects_split_modification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -89,8 +105,14 @@ class IntegratedTests(unittest.TestCase):
         self.assertTrue(bool(torch.all(targets == 3)))
 
     def test_wikitext_articles_preserve_heading_boundaries(self) -> None:
-        source = ["= First =\n", "A @-@ B is here.\n", "\n", "= Second =\n", "Other text.\n"]
-        self.assertEqual(list(iter_articles(source)), ["First A-B is here.", "Second Other text."])
+        source = [
+            "= First =\n", "A @-@ B is here.\n", "= = Gameplay = =\n", "More detail.\n", "\n",
+            "= Second =\n", "Other text.\n",
+        ]
+        self.assertEqual(
+            list(iter_articles(source)),
+            ["First A-B is here. Gameplay More detail.", "Second Other text."],
+        )
 
     def test_wikitext_preparation_writes_hashed_article_splits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

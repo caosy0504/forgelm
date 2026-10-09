@@ -33,20 +33,34 @@ def prose_quality_features(text: str) -> dict[str, float | int]:
     words = WORD_RE.findall(text)
     visible = [char for char in text if not char.isspace()]
     alpha = sum(char.isalpha() for char in visible) / max(1, len(visible))
-    sentences = sum(text.count(mark) for mark in ".!?")
-    length = min(1.0, math.log1p(len(words)) / math.log1p(800))
-    sentence_density = min(1.0, sentences / max(1.0, len(words) / 35.0))
-    alpha_score = min(1.0, max(0.0, (alpha - 0.45) / 0.35))
-    unique_ratio = len(set(word.casefold() for word in words)) / max(1, len(words))
-    score = round(0.30 * length + 0.30 * alpha_score + 0.25 * sentence_density + 0.15 * unique_ratio, 8)
+    sentence_count = max(1, sum(text.count(mark) for mark in ".!?"))
+    words_per_sentence = len(words) / sentence_count
+    sentence_score = 1.0 / (1.0 + abs(math.log(max(words_per_sentence, 1.0) / 25.0)))
+    length = min(1.0, len(words) / 256.0)
+    alpha_score = min(1.0, max(0.0, (alpha - 0.55) / 0.40))
+    folded = [word.casefold() for word in words]
+    window_size = 256
+    starts = [0] if len(folded) <= window_size else [0, (len(folded) - window_size) // 2, len(folded) - window_size]
+    windows = [folded[start : start + window_size] for start in starts]
+    unique_ratio = sum(len(set(window)) / max(1, len(window)) for window in windows) / len(windows)
+    trigram_uniqueness = sum(
+        len(set(zip(window, window[1:], window[2:]))) / max(1, len(window) - 2)
+        for window in windows
+    ) / len(windows)
+    score = round(
+        0.15 * length + 0.15 * alpha_score + 0.25 * sentence_score
+        + 0.30 * unique_ratio + 0.15 * trigram_uniqueness,
+        8,
+    )
     return {
         "score": score,
         "word_count": len(words),
         "utf8_bytes": len(text.encode("utf-8")),
         "length_score": round(length, 8),
         "alphabetic_score": round(alpha_score, 8),
-        "sentence_density": round(sentence_density, 8),
+        "sentence_density": round(sentence_score, 8),
         "unique_word_ratio": round(unique_ratio, 8),
+        "trigram_uniqueness": round(trigram_uniqueness, 8),
     }
 
 
@@ -65,6 +79,11 @@ def encode_documents_with_spans(
         spans.append(DocumentSpan(start, len(token_ids), prose_quality_score(text)))
     if not token_ids:
         raise ValueError("no tokens were produced")
+    return torch.frombuffer(token_ids, dtype=torch.int64), assign_quality_tiers(spans, seq_len)
+
+
+def assign_quality_tiers(spans: list[DocumentSpan], seq_len: int) -> list[DocumentSpan]:
+    """Assign thirds by the mass of valid token-window starts."""
     eligible = sorted(
         (index for index, span in enumerate(spans) if span.valid_starts(seq_len) > 0),
         key=lambda index: (spans[index].score, index),
@@ -77,9 +96,23 @@ def encode_documents_with_spans(
         midpoint = (cumulative + weight / 2) / total
         tiers[index] = 0 if midpoint <= 1 / 3 else 1 if midpoint <= 2 / 3 else 2
         cumulative += weight
-    return torch.frombuffer(token_ids, dtype=torch.int64), [
+    return [
         DocumentSpan(span.start, span.end, span.score, tiers[index]) for index, span in enumerate(spans)
     ]
+
+
+def rescore_document_spans(
+    texts: Iterable[str], spans: list[DocumentSpan], seq_len: int
+) -> list[DocumentSpan]:
+    """Recompute quality tiers without changing already encoded token boundaries."""
+    records = list(texts)
+    if len(records) != len(spans):
+        raise ValueError("document count differs from encoded token spans")
+    rescored = [
+        DocumentSpan(span.start, span.end, prose_quality_score(text))
+        for text, span in zip(records, spans, strict=True)
+    ]
+    return assign_quality_tiers(rescored, seq_len)
 
 
 class DocumentWindowSampler:

@@ -148,6 +148,11 @@ def run_pipeline_config(
     config.validate()
     artifact_dir = config.artifact_dir
     prepared_dir = artifact_dir / "dataset"
+    resolved_config_path = artifact_dir / "resolved_config.json"
+    previous_config = (
+        json.loads(resolved_config_path.read_text(encoding="utf-8"))
+        if resolved_config_path.exists() else None
+    )
     if fork_path is not None and artifact_dir.exists() and any(artifact_dir.iterdir()):
         raise FileExistsError("fork output directory must be new and empty")
     parent_dir = None
@@ -161,7 +166,7 @@ def run_pipeline_config(
             if parent_config[key] != current_config[key]:
                 raise ValueError(f"fork config mismatch: {key}")
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    (artifact_dir / "resolved_config.json").write_text(
+    resolved_config_path.write_text(
         json.dumps(config.as_dict(), indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
     )
 
@@ -197,17 +202,25 @@ def run_pipeline_config(
                 json.dumps(_preparation_inputs(config, prepared_dir), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
                 encoding="utf-8"
             )
-    train_documents = list(read_jsonl(prepared_dir / "train.jsonl"))
-    validation_documents = list(read_jsonl(prepared_dir / "validation.jsonl"))
-    tokenizer = (
-        BytePairTokenizer.load(artifact_dir / "tokenizer.json")
-        if fork_path is not None
-        else tokenizer_override or BytePairTokenizer.train(
+    tokenizer_path = artifact_dir / "tokenizer.json"
+    reusable_cache = (
+        tokenizer_path.exists() and (artifact_dir / "token_cache.pt").exists()
+        and (artifact_dir / "token_cache_manifest.json").exists()
+    )
+    if reusable_cache and fork_path is None and tokenizer_override is None:
+        if previous_config is None or previous_config.get("tokenizer") != asdict(config.tokenizer):
+            raise ValueError("existing tokenizer cache uses a different tokenizer configuration")
+    if (fork_path is not None or reusable_cache) and tokenizer_override is None:
+        tokenizer = BytePairTokenizer.load(tokenizer_path)
+        train_documents: list[Any] = []
+        validation_documents: list[Any] = []
+    else:
+        train_documents = list(read_jsonl(prepared_dir / "train.jsonl"))
+        validation_documents = list(read_jsonl(prepared_dir / "validation.jsonl"))
+        tokenizer = tokenizer_override or BytePairTokenizer.train(
             _tokenizer_texts(train_documents, config.tokenizer.max_training_characters),
             config.tokenizer.vocab_size,
         )
-    )
-    tokenizer_path = artifact_dir / "tokenizer.json"
     tokenizer.save(tokenizer_path)
     train_tokens, validation_tokens, train_spans, validation_spans = _load_or_build_token_cache(
         artifact_dir,

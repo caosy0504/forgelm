@@ -17,7 +17,7 @@ from .decode_benchmark import benchmark_decode
 from .evaluation import evaluate_checkpoint
 from .pipeline import build_quality_model, run_data_ablation, run_pipeline
 from .quality_model import train_quality_classifier
-from .quality_audit import audit_quality
+from .quality_audit import audit_quality, retier_quality_cache
 from .reproducibility import environment_metadata, resolve_device
 from .scaling import fit_from_json
 from .tokenizer import BytePairTokenizer
@@ -60,6 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
     quality_audit.add_argument("--sample-per-tier", type=int, default=20)
     quality_audit.add_argument("--seed", type=int, default=42)
     quality_audit.add_argument("--labels", default=None)
+
+    retier = subparsers.add_parser("retier-quality", help="rescore cached documents before training")
+    retier.add_argument("--config", default="configs/wikitext4090_base.toml")
 
     tokenizer_audit = subparsers.add_parser("audit-tokenizer", help="compare train-only BPE vocabulary sizes")
     tokenizer_audit.add_argument("--config", default="configs/wikitext3070ti_base.toml")
@@ -211,6 +214,9 @@ def main(argv: list[str] | None = None) -> int:
         print_json(audit_quality(
             args.config, sample_per_tier=args.sample_per_tier, seed=args.seed, labels_path=args.labels
         ))
+        return 0
+    if args.command == "retier-quality":
+        print_json(retier_quality_cache(args.config))
         return 0
     if args.command == "audit-tokenizer":
         print_json(audit_tokenizers(

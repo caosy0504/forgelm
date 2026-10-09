@@ -14,10 +14,65 @@ import torch
 from .config import ProjectConfig
 from .data_pipeline import read_jsonl
 from .fingerprint import sha256_file
-from .sampling import DocumentSpan, prose_quality_features
+from .sampling import DocumentSpan, prose_quality_features, rescore_document_spans
 
 
 TIER_NAMES = ("low", "medium", "high")
+
+
+def retier_quality_cache(config_path: str | Path) -> dict[str, Any]:
+    """Rescore existing token spans before training, preserving token IDs and boundaries."""
+    config = ProjectConfig.from_toml(config_path)
+    artifact_dir = config.artifact_dir
+    if any(artifact_dir.glob("checkpoint*.pt")):
+        raise ValueError("quality tiers cannot be changed after a training checkpoint exists")
+    dataset_path = artifact_dir / "dataset" / "train.jsonl"
+    tokenizer_path = artifact_dir / "tokenizer.json"
+    cache_path = artifact_dir / "token_cache.pt"
+    manifest_path = artifact_dir / "token_cache_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for key, actual in (
+        ("train_sha256", sha256_file(dataset_path)),
+        ("tokenizer_sha256", sha256_file(tokenizer_path)),
+        ("cache_sha256", sha256_file(cache_path)),
+    ):
+        if manifest.get(key) != actual:
+            raise ValueError(f"cannot retier mismatched cache: {key}")
+    if manifest.get("seq_len") != config.training.seq_len:
+        raise ValueError("cannot retier cache with a different sequence length")
+    payload = torch.load(cache_path, map_location="cpu", weights_only=True)
+    old_spans = [DocumentSpan(*row) for row in payload["spans"]]
+    documents = list(read_jsonl(dataset_path))
+    if not old_spans or old_spans[-1].end != int(payload["train_tokens"].numel()):
+        raise ValueError("cached document spans do not cover the token stream")
+    new_spans = rescore_document_spans((document.text for document in documents), old_spans, config.training.seq_len)
+    payload["spans"] = [(span.start, span.end, span.score, span.tier) for span in new_spans]
+    for name in ("quality_audit.json", "quality_audit_samples.csv"):
+        old_path = artifact_dir / name
+        if old_path.exists():
+            archive = artifact_dir / f"{name}.before_retier"
+            if archive.exists():
+                raise FileExistsError(f"quality audit archive already exists: {archive}")
+            old_path.rename(archive)
+    old_hash = manifest["cache_sha256"]
+    temporary_cache = artifact_dir / "token_cache.pt.retier"
+    torch.save(payload, temporary_cache)
+    manifest["cache_sha256"] = sha256_file(temporary_cache)
+    manifest["sampling_source_sha256"] = sha256_file(Path(__file__).with_name("sampling.py"))
+    manifest["retiered_from_cache_sha256"] = old_hash
+    temporary_manifest = artifact_dir / "token_cache_manifest.json.retier"
+    temporary_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary_cache.replace(cache_path)
+    temporary_manifest.replace(manifest_path)
+    return {
+        "documents": len(new_spans),
+        "train_tokens": int(payload["train_tokens"].numel()),
+        "old_cache_sha256": old_hash,
+        "new_cache_sha256": manifest["cache_sha256"],
+        "tier_documents": {name: sum(span.tier == index for span in new_spans)
+                           for index, name in enumerate(TIER_NAMES)},
+        "status": "rescored_before_training",
+    }
 
 
 def audit_quality(
@@ -72,7 +127,10 @@ def audit_quality(
             if members else None,
             "mean_features": {
                 key: statistics.mean(float(item[key]) for item in features) if features else None
-                for key in ("length_score", "alphabetic_score", "sentence_density", "unique_word_ratio")
+                for key in (
+                    "length_score", "alphabetic_score", "sentence_density",
+                    "unique_word_ratio", "trigram_uniqueness",
+                )
             },
         }
         for document, _ in rng.sample(members, min(sample_per_tier, len(members))):

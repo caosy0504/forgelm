@@ -4,6 +4,8 @@ ForgeLM is a reproducible, single-GPU language-model pretraining project. One de
 
 **Status:** The integrated workflow, tests, and CPU end-to-end smoke run are complete. The WikiText-103 RTX 3070 Ti experiment is configured but has **not** been run or measured on that GPU. No WikiText perplexity or GPU speedup is claimed yet.
 
+**Unreleased local profile:** `configs/wikitext4090_*.toml` targets a rented RTX 4090 with an approximately 88M-parameter model and a 400M-character WikiText-103 train prefix. The Mac data/token cache is prepared and audited, but the profile has no RTX 4090 measurements. It is not part of the published v0.3.0 GitHub release; local training instructions are kept outside the public source package.
+
 ## Research question
 
 Under an 8 GB single-GPU constraint, can a transparent document-sampling policy improve validation language-model quality at the same training token budget, and can static KV caching improve greedy decoding throughput without changing the generated tokens?
@@ -30,7 +32,7 @@ Pinned WikiText-103 splits
 | Evaluation | Fixed-seed document-bounded random windows during training; document-aware rolling windows for full validation and final test; cross-entropy, PPL, and full-corpus BPB |
 | Inference | Preallocated output and per-layer static KV cache, context-window rebuild, cached/full-forward logit parity, exact greedy-output parity, first-token and total-latency benchmarks |
 
-The quality score is a transparent prose-shape heuristic based on document length, alphabetic content, sentence density, and lexical diversity. It is **not** a factuality or safety score. Documents are grouped into three tiers by eligible token-window mass. The uniform branch samples every eligible document window equally; the quality branch first samples a tier, then samples a window uniformly within that tier.
+The quality score is a transparent prose-shape heuristic based on minimum useful length, alphabetic content, sentence length, and lexical/trigram diversity measured in fixed-size windows. Fixed windows avoid automatically penalizing long articles for having a lower whole-document type/token ratio. It is **not** a factuality or safety score. Documents are grouped into three tiers by eligible token-window mass. The uniform branch samples every eligible document window equally; the quality branch first samples a tier, then samples a window uniformly within that tier.
 
 ## Controlled experiment
 

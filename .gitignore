@@ -7,9 +7,12 @@ build/
 artifacts/
 data/wikitext103_raw/
 data/wikitext103_articles/
+data/wikitext103_400m_raw/
+data/wikitext103_400m_articles/
 *.pt
 *.bin
 PRIVATE_PROJECT_GUIDE.zh-CN.md
 个人使用与训练说明.md
 V2改进原理说明.md
 README_个人版.md
+RTX4090_Featurize_训练说明.md

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forgelm"
-version = "0.3.0"
+version = "0.4.0.dev0"
 description = "A quality-aware, reproducible language-model pretraining and ablation stack"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

@@ -13,8 +13,8 @@ from .fingerprint import sha256_file
 DATASET = "Salesforce/wikitext"
 CONFIG = "wikitext-103-raw-v1"
 REVISION = "5fddba447aa4e75996922ea0d6b18b42f0a81cc4"
-PREPARATION_VERSION = "forgelm-wikitext-articles-v1"
-HEADING_RE = re.compile(r"^=\s*([^=].*?)\s*=$")
+PREPARATION_VERSION = "forgelm-wikitext-articles-v2"
+HEADING_RE = re.compile(r"^=\s*([^=]+?)\s*=$")
 ARTIFACTS = (
     (re.compile(r"\s*@-@\s*"), "-"),
     (re.compile(r"(?<=\d)\s*@,@\s*(?=\d)"), ","),
@@ -95,6 +95,8 @@ def iter_articles(lines: Iterable[str]) -> Iterable[str]:
             article = []
         if heading:
             line = heading.group(1).strip()
+        elif line.startswith("=") and line.endswith("="):
+            line = line.strip("= ").strip()
         if not line:
             continue
         for pattern, replacement in ARTIFACTS:

@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import unicodedata
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Iterator, Protocol
+
+import numpy as np
 
 from .config import DataConfig
 
@@ -15,6 +20,8 @@ from .config import DataConfig
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PHONE_RE = re.compile(r"(?<!\w)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}(?!\w)")
 IPV4_RE = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
+CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]")
+FAST_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 class QualityScorer(Protocol):
@@ -97,6 +104,8 @@ def _is_cjk(character: str) -> bool:
 def normalized_words(text: str) -> list[str]:
     """Produce Unicode-aware dedup units; CJK characters become individual units."""
     normalized = unicodedata.normalize("NFKC", text).casefold()
+    if CJK_RE.search(normalized) is None:
+        return FAST_WORD_RE.findall(normalized)
     units: list[str] = []
     buffer: list[str] = []
 
@@ -171,17 +180,32 @@ def _seeded_hash(value: str, seed: int) -> int:
     return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "little")
 
 
+@lru_cache(maxsize=16)
+def _minhash_coefficients(num_hashes: int) -> tuple[np.ndarray, np.ndarray]:
+    multipliers = np.array([_seeded_hash("a", seed) | 1 for seed in range(num_hashes)], dtype=np.uint64)
+    offsets = np.array([_seeded_hash("b", seed) for seed in range(num_hashes)], dtype=np.uint64)
+    return multipliers, offsets
+
+
 def minhash_signature(shingles: set[str], num_hashes: int) -> tuple[int, ...]:
     if not shingles:
         return tuple(0 for _ in range(num_hashes))
-    return tuple(min(_seeded_hash(shingle, seed) for shingle in shingles) for seed in range(num_hashes))
+    values = np.fromiter(
+        (int.from_bytes(hashlib.blake2b(shingle.encode("utf-8"), digest_size=8).digest(), "little")
+         for shingle in shingles),
+        dtype=np.uint64,
+        count=len(shingles),
+    )
+    multipliers, offsets = _minhash_coefficients(num_hashes)
+    signature = (values[:, None] * multipliers[None, :] + offsets[None, :]).min(axis=0)
+    return tuple(int(value) for value in signature)
 
 
 def jaccard(left: set[str], right: set[str]) -> float:
-    union = left | right
-    if not union:
+    if not left and not right:
         return 1.0 if left == right else 0.0
-    return len(left & right) / len(union)
+    intersection = len(left & right)
+    return intersection / (len(left) + len(right) - intersection)
 
 
 class _UnionFind:
@@ -212,8 +236,10 @@ def near_deduplicate(
     if len(documents) < 2:
         return documents, 0
     rows_per_band = num_hashes // num_bands
-    shingles = [word_ngrams(document.text, ngram_size) for document in documents]
-    signatures = [minhash_signature(items, num_hashes) for items in shingles]
+    signatures = [
+        minhash_signature(word_ngrams(document.text, ngram_size), num_hashes)
+        for document in documents
+    ]
     buckets: dict[tuple[int, tuple[int, ...]], list[int]] = defaultdict(list)
     for doc_index, signature in enumerate(signatures):
         for band in range(num_bands):
@@ -227,8 +253,13 @@ def near_deduplicate(
                 candidates.add((left, right))
 
     groups = _UnionFind(len(documents))
+    candidate_indices = {index for pair in candidates for index in pair}
+    candidate_shingles = {
+        index: word_ngrams(documents[index].text, ngram_size) for index in candidate_indices
+    }
     for left, right in sorted(candidates):
-        if shingles[left] and shingles[right] and jaccard(shingles[left], shingles[right]) >= threshold:
+        if (candidate_shingles[left] and candidate_shingles[right]
+                and jaccard(candidate_shingles[left], candidate_shingles[right]) >= threshold):
             groups.union(left, right)
 
     kept: list[Document] = []
@@ -255,20 +286,25 @@ def split_documents(documents: list[Document], validation_fraction: float) -> tu
 def decontaminate_documents(
     train: list[Document], validation: list[Document], *, threshold: float, ngram_size: int
 ) -> tuple[list[Document], int]:
-    validation_shingles = [word_ngrams(document.text, ngram_size) for document in validation]
-    inverted: dict[str, set[int]] = defaultdict(set)
-    for validation_index, shingles in enumerate(validation_shingles):
-        for shingle in shingles:
-            inverted[shingle].add(validation_index)
+    if not validation:
+        return train, 0
+    if threshold <= 0:
+        return [], len(train)
+    validation_sets = [word_ngrams(document.text, ngram_size) for document in validation]
+    validation_shingles = sorted(
+        ((len(shingles), shingles) for shingles in validation_sets), key=lambda item: item[0]
+    )
+    validation_sizes = [size for size, _ in validation_shingles]
     kept: list[Document] = []
     dropped = 0
     for document in train:
         shingles = word_ngrams(document.text, ngram_size)
-        candidates: set[int] = set()
-        for shingle in shingles:
-            candidates.update(inverted.get(shingle, ()))
+        size = len(shingles)
+        low = bisect_left(validation_sizes, math.ceil(threshold * size))
+        high = bisect_right(validation_sizes, math.floor(size / threshold))
         contaminated = any(
-            jaccard(shingles, validation_shingles[index]) >= threshold for index in candidates if shingles
+            jaccard(shingles, reference) >= threshold
+            for _, reference in validation_shingles[low:high]
         )
         if contaminated:
             dropped += 1

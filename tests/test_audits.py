@@ -11,7 +11,7 @@ import torch
 from forgelm.data_pipeline import Document, write_jsonl
 from forgelm.comparison import summarize_seeds
 from forgelm.fingerprint import sha256_file
-from forgelm.quality_audit import audit_quality
+from forgelm.quality_audit import audit_quality, retier_quality_cache
 from forgelm.sampling import encode_documents_with_spans
 import forgelm.sampling as sampling_module
 from forgelm.tokenizer import BytePairTokenizer
@@ -88,6 +88,12 @@ class AuditTests(unittest.TestCase):
             token_report = audit_tokenizers(config, vocab_sizes=[270, 280])
             self.assertEqual(len(token_report["rows"]), 2)
             self.assertTrue(all(row["tokens_per_byte"] > 0 for row in token_report["rows"]))
+            retiered = retier_quality_cache(config)
+            self.assertEqual(retiered["train_tokens"], len(tokens))
+            self.assertTrue((artifact / "quality_audit_samples.csv.before_retier").exists())
+            (artifact / "checkpoint_last.pt").write_bytes(b"locked")
+            with self.assertRaisesRegex(ValueError, "after a training checkpoint"):
+                retier_quality_cache(config)
 
 
 if __name__ == "__main__":
