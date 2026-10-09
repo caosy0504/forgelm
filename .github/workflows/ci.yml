@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e .
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: End-to-end smoke run
+        run: forgelm run --config configs/smoke.toml
+      - name: V2 quality-aware smoke run
+        run: forgelm run --config configs/smoke_v2.toml
+      - name: Independent checkpoint evaluation
+        run: forgelm evaluate --config configs/smoke_v2.toml
+      - name: Held-out test-set evaluation
+        run: forgelm test --config configs/smoke_v2.toml
+      - name: Controlled data ablation
+        run: forgelm ablate-data --config configs/smoke_v2.toml
+      - name: Prepare and audit integrated smoke data
+        run: |
+          forgelm prepare-experiment --config configs/integrated_smoke_base.toml
+          forgelm audit-quality --config configs/integrated_smoke_base.toml --sample-per-tier 2
+          forgelm audit-tokenizer --config configs/integrated_smoke_base.toml --vocab-sizes 270 280 --max-training-characters 1000
+      - name: Integrated shared-prefix smoke run
+        run: forgelm run --config configs/integrated_smoke_base.toml --stop-step 2
+      - name: Integrated uniform continuation
+        run: forgelm run --config configs/integrated_smoke_uniform.toml --fork artifacts/integrated-smoke/base/checkpoint_last.pt
+      - name: Integrated quality continuation
+        run: forgelm run --config configs/integrated_smoke_quality.toml --fork artifacts/integrated-smoke/base/checkpoint_last.pt
+      - name: Full-corpus validation for both branches
+        run: |
+          forgelm evaluate --config configs/integrated_smoke_uniform.toml --full-corpus
+          forgelm evaluate --config configs/integrated_smoke_quality.toml --full-corpus
+      - name: Check controlled comparison
+        run: forgelm compare-sampling --uniform-dir artifacts/integrated-smoke/uniform --quality-dir artifacts/integrated-smoke/quality --output artifacts/integrated-smoke/comparison_summary.json
+      - name: Check cached decoding parity
+        run: forgelm benchmark-decode --checkpoint artifacts/integrated-smoke/quality/checkpoint_last.pt --tokenizer artifacts/integrated-smoke/quality/tokenizer.json --prompt "A careful experiment" --new-tokens 8 --trials 2 --device cpu

@@ -1,0 +1,78 @@
+[project]
+name = "forgelm-v2-rtx3070ti"
+seed = 42
+output_dir = "artifacts/v2/rtx3070ti"
+
+[data]
+# 由 scripts/split_tinystories.py 生成的固定 90/5/5 文档级切分。
+input_path = "data/tinystories_5m/train.txt"
+validation_path = "data/tinystories_5m/validation.txt"
+test_path = "data/tinystories_5m/test.txt"
+min_words = 5
+min_alpha_ratio = 0.55
+validation_fraction = 0.10
+near_dedup_threshold = 0.82
+ngram_size = 5
+num_hashes = 64
+num_bands = 16
+enable_pii_masking = true
+enable_quality_rules = true
+enable_exact_dedup = true
+enable_near_dedup = true
+enable_decontamination = true
+decontamination_threshold = 0.80
+enable_model_quality = false
+quality_seed_path = "data/quality_seed.jsonl"
+quality_threshold = 0.50
+quality_hash_dim = 2048
+quality_epochs = 200
+quality_learning_rate = 0.30
+
+[tokenizer]
+vocab_size = 2048
+
+[model]
+# 2048 词表时约 26.75M 参数；适合 8GB 显存的个人实验。
+d_model = 512
+n_layers = 8
+n_heads = 8
+d_ff = 1408
+max_seq_len = 1024
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+qk_norm = true
+z_loss_weight = 0.00001
+rope_theta = 500000.0
+residual_scaled_init = true
+
+[training]
+# 每个 optimizer step 处理 2 x 512 x 16 = 16,384 tokens。
+# 1,000 steps 总计约 16.38M sampled tokens。
+steps = 1000
+batch_size = 2
+seq_len = 512
+gradient_accumulation_steps = 16
+learning_rate = 0.0006
+min_learning_rate_ratio = 0.10
+weight_decay = 0.10
+warmup_steps = 50
+gradient_clip = 1.0
+eval_interval = 100
+eval_batches = 20
+checkpoint_interval = 250
+device = "cuda"
+lr_schedule = "wsd"
+wsd_decay_steps = 100
+precision = "bf16"
+compile_model = true
+activation_checkpointing = true
+fused_optimizer = true
+# 不填写不可靠的理论峰值，因此暂不输出 MFU。
+peak_tflops = 0.0
+
+[generation]
+prompt = "A careful experiment"
+max_new_tokens = 160
+temperature = 0.8
+top_k = 50

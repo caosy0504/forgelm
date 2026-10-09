@@ -1,0 +1,73 @@
+[project]
+name = "forgelm-v2-gpu"
+seed = 42
+output_dir = "artifacts/v2/gpu"
+
+[data]
+input_path = "data/sample_corpus.txt"
+validation_path = "data/sample_validation.txt"
+test_path = "data/sample_test.txt"
+min_words = 20
+min_alpha_ratio = 0.60
+validation_fraction = 0.10
+near_dedup_threshold = 0.82
+ngram_size = 5
+num_hashes = 128
+num_bands = 16
+enable_pii_masking = true
+enable_quality_rules = true
+enable_exact_dedup = true
+enable_near_dedup = true
+enable_decontamination = true
+decontamination_threshold = 0.80
+enable_model_quality = true
+quality_seed_path = "data/quality_seed.jsonl"
+quality_threshold = 0.50
+quality_hash_dim = 4096
+quality_epochs = 100
+quality_learning_rate = 0.15
+
+[tokenizer]
+vocab_size = 8192
+
+[model]
+d_model = 768
+n_layers = 12
+n_heads = 12
+d_ff = 2048
+max_seq_len = 2048
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+qk_norm = true
+z_loss_weight = 0.00001
+rope_theta = 500000.0
+residual_scaled_init = true
+
+[training]
+steps = 10000
+batch_size = 8
+seq_len = 2048
+gradient_accumulation_steps = 8
+learning_rate = 0.0006
+min_learning_rate_ratio = 0.10
+weight_decay = 0.10
+warmup_steps = 500
+gradient_clip = 1.0
+eval_interval = 250
+eval_batches = 50
+checkpoint_interval = 1000
+device = "cuda"
+lr_schedule = "wsd"
+wsd_decay_steps = 1000
+precision = "bf16"
+compile_model = true
+activation_checkpointing = true
+fused_optimizer = true
+peak_tflops = 0.0
+
+[generation]
+prompt = "A careful experiment"
+max_new_tokens = 200
+temperature = 0.8
+top_k = 50

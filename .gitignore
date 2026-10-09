@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+.DS_Store
+artifacts/
+data/wikitext103_raw/
+data/wikitext103_articles/
+*.pt
+*.bin
+PRIVATE_PROJECT_GUIDE.zh-CN.md
+个人使用与训练说明.md
+V2改进原理说明.md
+README_个人版.md
