@@ -2,13 +2,13 @@
 
 ForgeLM is a reproducible, single-GPU language-model pretraining project. One decoder-only Transformer, one train-only tokenizer, and a versioned dataset feed a controlled experiment: after a shared training prefix, two branches use equal token budgets to compare document-uniform and quality-tier sampling. The selected checkpoint is then evaluated on the held-out test split and benchmarked with and without static KV caching.
 
-**Status:** The integrated workflow, tests, and CPU end-to-end smoke run are complete. The WikiText-103 RTX 3070 Ti experiment is configured but has **not** been run or measured on that GPU. No WikiText perplexity or GPU speedup is claimed yet.
+**Status:** The integrated workflow, tests, CPU smoke run, and one full WikiText-103 experiment on a rented RTX 4090 are complete. The older RTX 3070 Ti profile remains unmeasured.
 
-**Unreleased local profile:** `configs/wikitext4090_*.toml` targets a rented RTX 4090 with an approximately 88M-parameter model and a 400M-character WikiText-103 train prefix. The Mac data/token cache is prepared and audited, but the profile has no RTX 4090 measurements. It is not part of the published v0.3.0 GitHub release; local training instructions are kept outside the public source package.
+**Unreleased local profile:** `configs/wikitext4090_*.toml` targets an RTX 4090 with an 88.1M-parameter model and a 400M-character WikiText-103 train prefix. This local revision and its results have not been pushed to the published v0.3.0 GitHub release. Local rental and backup instructions are kept outside the public source package.
 
 ## Research question
 
-Under an 8 GB single-GPU constraint, can a transparent document-sampling policy improve validation language-model quality at the same training token budget, and can static KV caching improve greedy decoding throughput without changing the generated tokens?
+On a single GPU, how does a transparent document-sampling policy affect validation language-model quality at the same training token budget, and how much does static KV caching change greedy decoding throughput while preserving the generated tokens?
 
 ```text
 Pinned WikiText-103 splits
@@ -36,6 +36,21 @@ The quality score is a transparent prose-shape heuristic based on minimum useful
 
 ## Controlled experiment
 
+### Completed RTX 4090 run (seed 42)
+
+The measured profile used 12 layers, width 768, 12 heads, a 4,096-token byte-level BPE vocabulary, 1,024-token sequences, BF16, SDPA, and an effective batch of 32,768 tokens per optimizer step. It trained a shared document-uniform prefix to step 4,800, then continued uniform and quality-tier branches independently to step 6,000. Each branch received the same 39,321,600-token continuation budget. Both used the same prepared data, tokenizer, model, parent checkpoint, and learning-rate schedule.
+
+| Measure | Document-uniform | Quality-tier |
+|---|---:|---:|
+| Full-corpus validation loss | **1.6075** | 1.6174 |
+| Full-corpus validation perplexity | **4.9904** | 5.0397 |
+
+The quality-tier branch was **0.99% worse** in validation perplexity in this run. The validation-selected uniform checkpoint achieved **5.0357 test perplexity** and **1.0783 test bits per byte** on the held-out full corpus, evaluated once after model selection. On the same RTX 4090 checkpoint, static KV caching produced exactly the same greedy output as full-forward decoding and measured **181.0 versus 173.9 generated tokens/s** (1.04×) for a 7-token prompt and 128 generated tokens across five trials. These are small, shape-specific differences from one seed; they do not establish a general quality or inference-speed advantage.
+
+The full run used a 400M-character raw training prefix, with 180,839,589 train tokens after preparation and tokenization. The two branch checkpoints share the step-4,800 parent. The `comparison_summary.json`, evaluation summaries, final test summary, and decode benchmark are generated under `artifacts/wikitext4090/` and excluded from Git with the model checkpoints and corpus.
+
+### Earlier RTX 3070 Ti profile (unmeasured)
+
 The RTX profile uses a roughly 26.75M-parameter model, 2,048-token vocabulary target, 512-token training sequences, and 1,000 configured optimizer steps. Compilation is disabled in this Windows-oriented profile; BF16, activation checkpointing, and fused AdamW remain configurable. These are **planned settings**, subject to a short GPU memory and throughput check before formal training.
 
 1. Run the base configuration to step 800, keeping the 1,000-step learning-rate schedule intact.
@@ -56,7 +71,33 @@ python -m unittest discover -s tests -v
 
 The repository does not redistribute WikiText. The preparation command pins `Salesforce/wikitext`, `wikitext-103-raw-v1`, revision `5fddba447aa4e75996922ea0d6b18b42f0a81cc4` and writes source/output hashes. The upstream dataset card reports CC-BY-SA-3.0 and GFDL terms.
 
-## Reproduce the WikiText experiment
+## Reproduce the completed RTX 4090 experiment
+
+Run from the repository root with a CUDA-enabled PyTorch installation and enough persistent storage for the prepared corpus, token cache, and checkpoints. The three 4090 configurations use identical model and training controls; only the branch sampling policy and output directory differ. Preserve the exact source revision across the shared prefix and both continuations.
+
+```bash
+forgelm prepare-wikitext --download \
+  --raw-dir data/wikitext103_400m_raw \
+  --output-dir data/wikitext103_400m_articles \
+  --max-train-characters 400000000
+forgelm prepare-experiment --config configs/wikitext4090_base.toml
+forgelm audit-quality --config configs/wikitext4090_base.toml --sample-per-tier 20
+forgelm run --config configs/wikitext4090_base.toml --stop-step 4800
+forgelm run --config configs/wikitext4090_uniform.toml \
+  --fork artifacts/wikitext4090/base/checkpoint_last.pt
+forgelm run --config configs/wikitext4090_quality.toml \
+  --fork artifacts/wikitext4090/base/checkpoint_last.pt
+forgelm evaluate --config configs/wikitext4090_uniform.toml --full-corpus
+forgelm evaluate --config configs/wikitext4090_quality.toml --full-corpus
+forgelm compare-sampling \
+  --uniform-dir artifacts/wikitext4090/uniform \
+  --quality-dir artifacts/wikitext4090/quality \
+  --output artifacts/wikitext4090/comparison_summary.json
+```
+
+Select the branch recorded in `comparison_summary.json` before running `forgelm test` once on its configuration. Then run `forgelm benchmark-decode` on that same checkpoint and tokenizer. The measured seed-42 run selected `uniform`; a new run must use its own validation result. The local 4090 run used a 100-step preflight and then strictly resumed the same base configuration to step 4,800; this does not add training steps or change the learning-rate schedule.
+
+## Earlier RTX 3070 Ti recipe (unmeasured)
 
 Run these commands from the repository root. The three configurations differ only in project name, output directory, and sampling policy.
 
@@ -133,7 +174,7 @@ Smoke results verify the pipeline and controls; their tiny corpus and model are 
 
 The test suite covers tokenizer parity, document-bounded sampling and evaluation, fork constraints, per-document full-corpus target coverage, quality/tokenizer audits, attention parity, static-cache storage reuse, cached/full-forward logits, and cached/uncached greedy generation across a context-window rebuild. CI also runs the original package checks and the integrated CPU workflow.
 
-- The RTX profile and its memory footprint require measurement on the target machine. If it does not fit, reduce micro-batch size and increase accumulation before changing the model or token budget; record the final configuration before the formal comparison.
+- The older RTX 3070 Ti profile and its memory footprint still require measurement on that machine. If it does not fit, reduce micro-batch size and increase accumulation before changing the model or token budget; record the final configuration before the formal comparison.
 - The forced Flash Attention probe checks kernel eligibility for the benchmark shape; it does not prove that every training forward uses that kernel.
 - Full-corpus evaluation scores each document token once. The first token is conditioned on EOS; rolling windows overlap by default with a stride of half the evaluation sequence length. No validation/test context crosses documents. BPB includes EOS prediction cost and divides by prepared UTF-8 document bytes.
 - The quality heuristic may fail or worsen results. The comparison report preserves negative outcomes.
