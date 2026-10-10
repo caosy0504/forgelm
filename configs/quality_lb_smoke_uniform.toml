@@ -1,0 +1,76 @@
+[project]
+name = "forgelm-quality-lb-smoke-uniform"
+seed = 44
+output_dir = "artifacts/quality-lb-smoke/uniform"
+
+[data]
+input_path = "data/sample_corpus.txt"
+validation_path = "data/sample_validation.txt"
+test_path = "data/sample_test.txt"
+min_words = 5
+min_alpha_ratio = 0.55
+validation_fraction = 0.20
+near_dedup_threshold = 0.68
+ngram_size = 3
+num_hashes = 32
+num_bands = 16
+enable_pii_masking = true
+enable_quality_rules = true
+enable_exact_dedup = true
+enable_near_dedup = true
+enable_decontamination = true
+decontamination_threshold = 0.80
+enable_model_quality = false
+quality_seed_path = "data/quality_seed.jsonl"
+quality_threshold = 0.50
+quality_hash_dim = 2048
+quality_epochs = 200
+quality_learning_rate = 0.30
+
+[tokenizer]
+vocab_size = 270
+
+[model]
+d_model = 32
+n_layers = 1
+n_heads = 4
+d_ff = 64
+max_seq_len = 32
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+qk_norm = true
+z_loss_weight = 0.00001
+rope_theta = 500000.0
+residual_scaled_init = true
+
+[training]
+steps = 3
+batch_size = 2
+seq_len = 16
+gradient_accumulation_steps = 1
+learning_rate = 0.002
+min_learning_rate_ratio = 0.10
+weight_decay = 0.01
+warmup_steps = 0
+gradient_clip = 1.0
+eval_interval = 1
+eval_batches = 1
+checkpoint_interval = 1
+device = "cpu"
+lr_schedule = "wsd"
+wsd_decay_steps = 1
+precision = "fp32"
+compile_model = false
+activation_checkpointing = false
+fused_optimizer = false
+peak_tflops = 0.0
+
+sampling_policy = "document_uniform"
+quality_tier_probabilities = [0.1, 0.3, 0.6]
+
+[generation]
+prompt = "A careful experiment"
+max_new_tokens = 8
+temperature = 0.8
+top_k = 20

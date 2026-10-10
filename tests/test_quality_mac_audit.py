@@ -5,6 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import torch
+
+from forgelm.sampling import DocumentSpan, DocumentWindowSampler
 from scripts.audit_sampling_quality import Record, _human_label_summary, _length_stratified_tiers
 
 
@@ -17,12 +20,12 @@ class LengthBalancedAuditTests(unittest.TestCase):
                 score=0.1 * (index // 30) + (index % 30) / 1000,
                 current_tier=0 if index < 40 else 1 if index < 80 else 2,
                 valid_windows=100 * (1 + index // 30),
-                tokens=1024 + 100 * index,
+                tokens=1024 + 100 * (1 + index // 30),
                 utf8_bytes=2000 + 120 * index,
             )
             for index in range(120)
         ]
-        candidate = _length_stratified_tiers(records)
+        candidate = _length_stratified_tiers(records, 1024)
         self.assertEqual(
             [(r.doc_id, r.score, r.valid_windows) for r in records],
             [(r.doc_id, r.score, r.valid_windows) for r in candidate],
@@ -37,7 +40,30 @@ class LengthBalancedAuditTests(unittest.TestCase):
 
     def test_not_enough_documents_fails_explicitly(self) -> None:
         with self.assertRaisesRegex(ValueError, "eligible document"):
-            _length_stratified_tiers([], strata=4)
+            _length_stratified_tiers([], 1024, strata=4)
+
+    def test_training_sampler_uses_length_balanced_tiers(self) -> None:
+        seq_len = 4
+        spans = []
+        start = 0
+        for index in range(48):
+            tokens = 6 + index // 12
+            spans.append(DocumentSpan(start, start + tokens, index / 48, 0))
+            start += tokens
+        sampler = DocumentWindowSampler(
+            torch.arange(start),
+            spans,
+            seq_len,
+            policy="quality_tier_length_balanced",
+            tier_probabilities=(0.0, 0.0, 1.0),
+        )
+        self.assertGreater(len(sampler.members[2]), 0)
+        inputs, _ = sampler.sample_batch(32, torch.device("cpu"), torch.Generator().manual_seed(7))
+        for sample in inputs:
+            offset = int(sample[0])
+            self.assertTrue(any(
+                span.start <= offset < span.end - seq_len for span in sampler.members[2]
+            ))
 
     def test_partial_human_labels_are_separate_from_hidden_tier_key(self) -> None:
         lookup = {

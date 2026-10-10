@@ -38,8 +38,10 @@ def compare_sampling(
     right_training = dict(right_contract["training_config"])
     left_policy = left_training.pop("sampling_policy")
     right_policy = right_training.pop("sampling_policy")
-    if (left_policy, right_policy) != ("document_uniform", "quality_tier"):
-        raise ValueError("expected document_uniform and quality_tier branches")
+    if left_policy != "document_uniform" or right_policy not in {
+        "quality_tier", "quality_tier_length_balanced"
+    }:
+        raise ValueError("expected document_uniform and a supported quality-tier branch")
     if left_training != right_training:
         raise ValueError("sampling branches differ in training settings beyond policy")
     if left["steps"] != right["steps"] or left["sampled_tokens_this_run"] != right["sampled_tokens_this_run"]:
@@ -68,7 +70,7 @@ def compare_sampling(
         raise ValueError("sampling branches evaluated different token counts")
     selected = "quality" if right_eval["cross_entropy_loss"] < left_eval["cross_entropy_loss"] else "uniform"
     result = {
-        "comparison": "document_uniform_vs_quality_tier",
+        "comparison": f"document_uniform_vs_{right_policy}",
         "parent_checkpoint": left["parent_checkpoint"],
         "train_dataset_sha256": left_contract["dataset"]["train_sha256"],
         "validation_dataset_sha256": left_contract["dataset"]["validation_sha256"],

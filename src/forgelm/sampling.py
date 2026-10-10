@@ -101,6 +101,36 @@ def assign_quality_tiers(spans: list[DocumentSpan], seq_len: int) -> list[Docume
     ]
 
 
+def assign_length_balanced_quality_tiers(
+    spans: list[DocumentSpan], seq_len: int, *, length_strata: int = 4
+) -> list[DocumentSpan]:
+    """Rank quality within token-length strata, balancing valid-window mass in each."""
+    if length_strata < 1:
+        raise ValueError("length_strata must be positive")
+    eligible = sorted(
+        (index for index, span in enumerate(spans) if span.valid_starts(seq_len) > 0),
+        key=lambda index: (spans[index].end - spans[index].start, index),
+    )
+    if len(eligible) < length_strata:
+        raise ValueError("not enough eligible documents for length-balanced quality tiers")
+    tiers = [-1] * len(spans)
+    for stratum in range(length_strata):
+        members = sorted(
+            (index for rank, index in enumerate(eligible) if rank * length_strata // len(eligible) == stratum),
+            key=lambda index: (spans[index].score, index),
+        )
+        total = sum(spans[index].valid_starts(seq_len) for index in members)
+        cumulative = 0
+        for index in members:
+            weight = spans[index].valid_starts(seq_len)
+            midpoint = (cumulative + weight / 2) / total
+            tiers[index] = 0 if midpoint <= 1 / 3 else 1 if midpoint <= 2 / 3 else 2
+            cumulative += weight
+    return [
+        DocumentSpan(span.start, span.end, span.score, tiers[index]) for index, span in enumerate(spans)
+    ]
+
+
 def rescore_document_spans(
     texts: Iterable[str], spans: list[DocumentSpan], seq_len: int
 ) -> list[DocumentSpan]:
@@ -130,6 +160,8 @@ class DocumentWindowSampler:
         self.policy = policy
         self.tier_probabilities = tier_probabilities
         self.tier_draw_counts = [0, 0, 0]
+        if policy == "quality_tier_length_balanced":
+            spans = assign_length_balanced_quality_tiers(spans, seq_len)
         self.eligible = [span for span in spans if span.valid_starts(seq_len) > 0]
         if not self.eligible:
             raise ValueError("no document has enough tokens for a training window")
@@ -144,7 +176,7 @@ class DocumentWindowSampler:
                 cumulative.append(running)
             self.members[tier] = members
             self.cumulative[tier] = cumulative
-        if policy == "quality_tier":
+        if policy in {"quality_tier", "quality_tier_length_balanced"}:
             for tier, probability in enumerate(tier_probabilities):
                 if probability > 0 and not self.members[tier]:
                     raise ValueError(f"quality tier {tier} has no eligible documents")
@@ -162,7 +194,7 @@ class DocumentWindowSampler:
         for _ in range(batch_size):
             tier = (
                 int(torch.multinomial(probabilities, 1, generator=generator).item())
-                if self.policy == "quality_tier"
+                if self.policy in {"quality_tier", "quality_tier_length_balanced"}
                 else -1
             )
             span = self._pick_span(tier, generator)

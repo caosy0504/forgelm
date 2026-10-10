@@ -1,7 +1,7 @@
 """CPU-only diagnostics and blinded review sheet for a future quality-sampling experiment.
 
 This script never modifies ForgeLM's prepared dataset, token cache, or checkpoints.
-The length-balanced tiers are an audit candidate, not a training policy.
+The length-balanced policy is implemented separately, but has no GPU result yet.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import torch
 
 from forgelm.data_pipeline import read_jsonl
 from forgelm.fingerprint import sha256_file
-from forgelm.sampling import DocumentSpan, prose_quality_score
+from forgelm.sampling import DocumentSpan, assign_length_balanced_quality_tiers, prose_quality_score
 
 
 @dataclass(frozen=True)
@@ -35,27 +35,22 @@ class Record:
     candidate_tier: int = -1
 
 
-def _length_stratified_tiers(records: list[Record], strata: int = 4) -> list[Record]:
-    """Within each token-length stratum, split valid-window mass into thirds."""
+def _length_stratified_tiers(records: list[Record], seq_len: int, strata: int = 4) -> list[Record]:
+    """Describe the same length-balanced tiers that the training sampler will use."""
     if strata < 1 or len(records) < strata:
         raise ValueError("need at least one eligible document per length stratum")
-    order = sorted(range(len(records)), key=lambda index: (records[index].tokens, records[index].doc_id))
+    if any(record.valid_windows != max(0, record.tokens - seq_len) for record in records):
+        raise ValueError("record windows do not match the training sequence length")
+    order = sorted(range(len(records)), key=lambda index: (records[index].tokens, index))
     stratum_for = {index: min(strata - 1, rank * strata // len(order)) for rank, index in enumerate(order)}
-    candidate_for: dict[int, int] = {}
-    for stratum in range(strata):
-        members = sorted(
-            (index for index in order if stratum_for[index] == stratum),
-            key=lambda index: (records[index].score, records[index].doc_id),
-        )
-        total = sum(records[index].valid_windows for index in members)
-        cumulative = 0
-        for index in members:
-            weight = records[index].valid_windows
-            midpoint = (cumulative + weight / 2) / total
-            candidate_for[index] = 0 if midpoint <= 1 / 3 else 1 if midpoint <= 2 / 3 else 2
-            cumulative += weight
+    starts = 0
+    spans = []
+    for record in records:
+        spans.append(DocumentSpan(starts, starts + record.tokens, record.score, record.current_tier))
+        starts += record.tokens
+    assigned = assign_length_balanced_quality_tiers(spans, seq_len, length_strata=strata)
     return [
-        Record(**{**record.__dict__, "length_stratum": stratum_for[index], "candidate_tier": candidate_for[index]})
+        Record(**{**record.__dict__, "length_stratum": stratum_for[index], "candidate_tier": assigned[index].tier})
         for index, record in enumerate(records)
     ]
 
@@ -195,7 +190,7 @@ def run(base_dir: Path, output_dir: Path, seed: int, per_cell: int, labels: Path
         ))
     if count != len(spans):
         raise ValueError("prepared document count differs from token-cache spans")
-    records = _length_stratified_tiers(records)
+    records = _length_stratified_tiers(records, int(manifest["seq_len"]))
     scores = np.asarray([record.score for record in records])
     lengths = np.asarray([record.utf8_bytes for record in records])
     score_ranks = np.argsort(np.argsort(scores))
@@ -216,7 +211,7 @@ def run(base_dir: Path, output_dir: Path, seed: int, per_cell: int, labels: Path
     candidate_path = output_dir / "candidate_tiers.json"
     candidate = {
         "format": "forgelm-length-balanced-tier-map-v1",
-        "status": "audit candidate only; not consumed by the current trainer",
+        "status": "audit snapshot; experimental trainer recomputes tiers and does not read this file",
         "train_sha256": manifest["train_sha256"],
         "token_cache_sha256": manifest["cache_sha256"],
         "seq_len": manifest["seq_len"],
@@ -259,7 +254,7 @@ def run(base_dir: Path, output_dir: Path, seed: int, per_cell: int, labels: Path
     validation_scores = [prose_quality_score(doc.text) for doc in read_jsonl(validation)]
     report: dict[str, object] = {
         "format": "forgelm-length-balanced-quality-audit-v1",
-        "status": "cpu_diagnostic_only; no training policy changed",
+        "status": "cpu-validated experimental policy; no GPU result or human labels",
         "train_sha256": manifest["train_sha256"],
         "token_cache_sha256": manifest["cache_sha256"],
         "eligible_documents": len(records),

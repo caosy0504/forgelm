@@ -14,7 +14,12 @@ import torch
 from .config import ProjectConfig
 from .data_pipeline import read_jsonl
 from .fingerprint import sha256_file
-from .sampling import DocumentSpan, prose_quality_features, rescore_document_spans
+from .sampling import (
+    DocumentSpan,
+    assign_length_balanced_quality_tiers,
+    prose_quality_features,
+    rescore_document_spans,
+)
 
 
 TIER_NAMES = ("low", "medium", "high")
@@ -103,6 +108,8 @@ def audit_quality(
         raise ValueError("quality audit sampling code differs from the token cache")
     payload = torch.load(cache_path, map_location="cpu", weights_only=True)
     spans = [DocumentSpan(*row) for row in payload["spans"]]
+    if config.training.sampling_policy == "quality_tier_length_balanced":
+        spans = assign_length_balanced_quality_tiers(spans, config.training.seq_len)
     documents = list(read_jsonl(dataset_path))
     if len(documents) != len(spans):
         raise ValueError("quality audit document and token-span counts differ")

@@ -1,0 +1,74 @@
+[project]
+name = "forgelm-wikitext4090-lb-seed43-base"
+seed = 43
+output_dir = "artifacts/wikitext4090_lb_seed43/base"
+
+[data]
+input_path = "data/wikitext103_400m_articles/train.txt"
+validation_path = "data/wikitext103_400m_articles/validation.txt"
+test_path = "data/wikitext103_400m_articles/test.txt"
+min_words = 20
+min_alpha_ratio = 0.55
+validation_fraction = 0.10
+near_dedup_threshold = 0.82
+ngram_size = 5
+num_hashes = 64
+num_bands = 16
+enable_pii_masking = true
+enable_quality_rules = true
+enable_exact_dedup = true
+enable_near_dedup = true
+enable_decontamination = true
+decontamination_threshold = 0.80
+enable_model_quality = false
+
+[tokenizer]
+vocab_size = 4096
+max_training_characters = 4000000
+
+[model]
+# 88,101,120 parameters at the requested 4,096-token vocabulary size.
+d_model = 768
+n_layers = 12
+n_heads = 12
+d_ff = 2048
+max_seq_len = 1024
+dropout = 0.0
+attention_impl = "sdpa"
+tie_embeddings = true
+qk_norm = true
+z_loss_weight = 0.00001
+rope_theta = 500000.0
+residual_scaled_init = true
+
+[training]
+# 4 x 1024 x 8 = 32,768 sampled tokens per optimizer step.
+# 6,000 steps = 196,608,000 sampled tokens; fork at step 4,800.
+steps = 6000
+batch_size = 4
+seq_len = 1024
+gradient_accumulation_steps = 8
+learning_rate = 0.0003
+min_learning_rate_ratio = 0.10
+weight_decay = 0.10
+warmup_steps = 200
+gradient_clip = 1.0
+eval_interval = 400
+eval_batches = 20
+checkpoint_interval = 800
+device = "cuda"
+lr_schedule = "wsd"
+wsd_decay_steps = 600
+precision = "bf16"
+compile_model = false
+activation_checkpointing = false
+fused_optimizer = true
+peak_tflops = 0.0
+sampling_policy = "document_uniform"
+quality_tier_probabilities = [0.1, 0.3, 0.6]
+
+[generation]
+prompt = "The history of science"
+max_new_tokens = 128
+temperature = 0.8
+top_k = 50

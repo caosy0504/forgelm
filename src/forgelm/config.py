@@ -155,7 +155,9 @@ class TrainingConfig:
             raise ValueError("training.precision must be 'fp32' or 'bf16'")
         if self.peak_tflops < 0:
             raise ValueError("training.peak_tflops must be non-negative")
-        if self.sampling_policy not in {"stream_uniform", "document_uniform", "quality_tier"}:
+        if self.sampling_policy not in {
+            "stream_uniform", "document_uniform", "quality_tier", "quality_tier_length_balanced"
+        }:
             raise ValueError("training.sampling_policy is invalid")
         if (
             len(self.quality_tier_probabilities) != 3
