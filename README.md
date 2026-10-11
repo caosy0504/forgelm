@@ -2,7 +2,7 @@
 
 ForgeLM is a single-GPU, decoder-only language model training project built around a controlled data-sampling experiment. It covers dataset preparation, a train-only byte-level BPE tokenizer, model training, checkpoint recovery, document-aware evaluation, and greedy decoding with a static KV cache.
 
-The completed WikiText-103 run trained an **88.1M-parameter model on an RTX 4090**. A shared 4,800-step prefix was forked into two equal-budget 1,200-step continuations to compare document-uniform sampling with a transparent quality-tier heuristic. Model selection used full-corpus validation; the selected checkpoint was evaluated once on the held-out test split.
+Two completed WikiText-103 experiments trained an **88.1M-parameter model on an RTX 4090**. Each used a 4,800-step shared prefix and equal-budget 1,200-step continuations. The first compared document-uniform sampling with a quality-tier heuristic; the second also tested a length-balanced tier assignment. Each experiment selected its checkpoint on full-corpus validation before one held-out test evaluation.
 
 ## System
 
@@ -12,13 +12,13 @@ The completed WikiText-103 run trained an **88.1M-parameter model on an RTX 4090
 | Tokenizer | Deterministic byte-level BPE trained only on prepared training documents; 4,096-token vocabulary in the measured run |
 | Model | Pre-norm Transformer with RoPE, RMSNorm, QK-Norm, SwiGLU, tied embeddings, scaled residual initialization, causal SDPA, and a small Z-loss term |
 | Training | BF16, gradient accumulation and clipping, fused AdamW, warmup–stable–decay schedule, resumable checkpoints, and SHA-256 run fingerprints |
-| Experiment | Shared parent checkpoint; equal continuation token budgets; only the document-sampling policy changes between branches |
+| Experiment | Shared parent checkpoint; equal continuation token budgets; document-uniform, quality-tier, and length-balanced quality-tier sampling policies |
 | Evaluation | Document-bounded rolling full-corpus likelihood, cross-entropy, perplexity, and bits per byte; validation-only checkpoint selection |
 | Decoding | Preallocated per-layer static KV cache; cached/full-forward greedy-output parity and latency/throughput measurements |
 
 The quality score measures prose *form*: useful length, alphabetic content, sentence length, and lexical/trigram diversity in fixed-size word windows. It does **not** measure factual accuracy, safety, or semantic value. Eligible training windows are divided into three tiers of approximately equal window mass; the quality branch samples those tiers with probabilities 0.1/0.3/0.6.
 
-## Completed experiment
+## Completed experiments
 
 | Setting | Value |
 |---|---:|
@@ -26,10 +26,12 @@ The quality score measures prose *form*: useful length, alphabetic content, sent
 | Prepared training documents / tokens | 21,531 / 180,839,589 |
 | Model | 12 layers, width 768, 12 heads, FFN width 2,048; 88,101,120 parameters |
 | Context / effective batch | 1,024 tokens / 32,768 sampled tokens per optimizer step |
-| Schedule | 4,800 shared steps + 1,200 steps per branch; seed 42 |
-| Hardware / precision | RTX 4090 / BF16 |
+| Schedule | 4,800 shared steps + 1,200 steps per branch; independent seeds 42 and 43 |
+| Hardware / precision | RTX 4090 / BF16; seed 43 used a 48 GB variant without changing the training configuration |
 
-Both branches started from the **same step-4,800 checkpoint**, tokenizer, dataset, optimizer state, random-seed lineage, and 6,000-step learning-rate schedule. Each continuation sampled 39,321,600 tokens.
+Within each experiment, branches started from the **same step-4,800 checkpoint**, tokenizer, dataset, optimizer state, random-seed lineage, and 6,000-step learning-rate schedule. Each continuation sampled 39,321,600 tokens.
+
+### Seed 42: initial sampling comparison
 
 | Full-corpus validation | Uniform | Quality-tier |
 |---|---:|---:|
@@ -40,7 +42,18 @@ The quality-tier branch had **0.99% higher** validation perplexity in this run. 
 
 Static KV caching generated exactly the same greedy output as full-forward decoding. On the selected RTX 4090 checkpoint, a 7-token prompt followed by 128 new tokens gave median rates of **180.97 versus 173.85 generated tokens/s** across five trials, a **1.04×** ratio. This short-output result does not establish a general decoding speedup.
 
-These are results from **one training seed**. The small sampling difference does not establish a population-level advantage for either policy; human labels for the quality-tier audit have not been completed.
+### Seed 43: length-balanced follow-up
+
+The follow-up first grouped eligible documents into token-length quartiles, then assigned quality tiers by eligible training-window mass within each quartile. This controlled an observed length bias in the heuristic tier assignment; it did not introduce human-verified quality labels. The three continuations shared the new seed-43 parent checkpoint and were compared on the same 515,512 validation tokens.
+
+| Full-corpus validation | Uniform | Original quality-tier | Length-balanced quality-tier |
+|---|---:|---:|---:|
+| Cross-entropy loss | **1.625259** | 1.634462 | 1.632634 |
+| Perplexity | **5.079734** | 5.126699 | 5.117334 |
+
+Length balancing reduced the quality branch's validation perplexity by about **0.18%** relative to the original tier assignment, but remained **0.74% higher** than uniform sampling. Validation therefore selected uniform. Its single held-out evaluation scored 583,812 test tokens with **5.112307 perplexity** and **1.088361 bits per byte**. This is a separate seed-43 run; its test score should not be substituted for the seed-42 model's result above.
+
+Both seeds selected uniform over the original quality-tier policy. Two seeds and small differences still do not establish a general advantage. A 60-document, excerpt-only AI-assisted audit was recorded for the length-balanced hypothesis; the human-label field remains empty, and those labels are not human ground truth.
 
 ## Reproduce
 
@@ -92,9 +105,11 @@ forgelm benchmark-decode \
 
 The measured run used a 100-step preflight and resumed the identical base configuration to step 4,800. Preflight steps were part of the 4,800-step prefix. Keep source code and the three experiment configurations unchanged after training starts: strict resume and controlled forking validate their fingerprints.
 
+To reproduce the seed-43 follow-up, use the four `configs/wikitext4090_lb_seed43_*.toml` files. Train the base to step 4,800, fork `uniform`, `quality_original`, and `quality_lengthbalanced` from its checkpoint, then run `evaluate --full-corpus` on all three and `compare-sampling` twice with uniform as the reference. Freeze the lowest full-validation-loss branch before calling `test` once. The seed-43 source fingerprint differs from seed 42, so its base must be trained independently rather than resumed from the older checkpoint.
+
 ## Verification and scope
 
-- Tests cover tokenizer round trips, document-bounded sampling and evaluation, fork controls, attention parity, and cached decoding correctness. The RTX 4090 environment passed 38 tests before training.
+- Tests cover tokenizer round trips, document-bounded sampling and evaluation, fork controls, attention parity, and cached decoding correctness. The seed-42 environment passed 38 tests; the seed-43 environment passed 42 tests before training.
 - Training-time validation samples fixed random windows; the reported comparison and final test score **every document token once** with rolling context and EOS conditioning at each document boundary. These two evaluation modes should not be compared as if they were identical.
 - The measured profile used BF16, SDPA, and fused AdamW. Compilation and activation checkpointing are implemented options but were disabled in this run. An eligible Flash Attention probe does not prove every training forward used that kernel.
 - Model-quality filtering, external-corpus evaluation, and scaling experiments are available as separate workflows; they were not part of this measured sampling comparison.
