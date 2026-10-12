@@ -1,0 +1,65 @@
+{
+  "checkpoint_provenance": [
+    {
+      "checkpoint_sha256": "880066f521ab4ef75e1546821c05b4e7befb7afb265a56c519910e459dcdf8c9",
+      "seed": 42,
+      "source_sha256": "daf1b779ae6183b7c71427c50f4df1a6d5be40d1b1727f39ecf7211271a8f750",
+      "step": 6000
+    },
+    {
+      "checkpoint_sha256": "22769cb7443c0a487f2ebfc63a5639dfea502571ce23ea4cd7c339d06a4c421f",
+      "seed": 43,
+      "source_sha256": "e1cbef50268d8f7ed8617054df7676c30488a134918f6ef8ee4144b0662d2677",
+      "step": 6000
+    }
+  ],
+  "corpus_content_sha256": {
+    "test_sha256": "20abd7e12298c2408caf50f874c0a7024a10306c2bc93c83e30a29d2c01e663f",
+    "train_sha256": "322049987db6d506c1a1e4bbd23d55b2957b08f708d2320cdfdf1147b7345385",
+    "validation_sha256": "a07b4c835358f965d59236c5a4b827f2a8795bd9c63e7ac73aed5e909ef7715b"
+  },
+  "evaluation_device": "Apple MPS",
+  "evaluation_precision": "fp32",
+  "format": "forgelm-two-seed-ensemble-summary-v1",
+  "inference_cost": "two model forward passes and two model weight sets per scored window",
+  "method": "fixed_equal_probability_mixture",
+  "source_script": "scripts/evaluate_ensemble.py",
+  "test_retrospective": {
+    "cross_entropy_loss": {
+      "ensemble": 1.577523321618387,
+      "first": 1.6165049918050602,
+      "second": 1.6315944564183802
+    },
+    "documents": 61,
+    "improved_documents_vs_best_single": 61,
+    "limitation": "component-model test scores had been seen in earlier experiments",
+    "perplexity": {
+      "ensemble": 4.842946524844731,
+      "first": 5.035460550531834,
+      "second": 5.112019115557905
+    },
+    "relative_ppl_change_vs_best_single": -0.038231661981101284,
+    "tokens": 583812
+  },
+  "tokenizer_sha256": "4e95da974478fdf3745601af43c92cec21676ac0a49a9fe0b1603494738c627f",
+  "validation": {
+    "cross_entropy_loss": {
+      "ensemble": 1.5704373498856037,
+      "first": 1.6074630584268959,
+      "second": 1.6251812336096656
+    },
+    "documents": 60,
+    "improved_documents_vs_best_single": 60,
+    "perplexity": {
+      "ensemble": 4.808750840575517,
+      "first": 4.990135473669664,
+      "second": 5.079339500800536
+    },
+    "relative_ppl_change_vs_best_single": -0.03634863904020624,
+    "tokens": 515512
+  },
+  "weights": [
+    0.5,
+    0.5
+  ]
+}

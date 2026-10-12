@@ -55,6 +55,20 @@ Length balancing reduced the quality branch's validation perplexity by about **0
 
 Both seeds selected uniform over the original quality-tier policy. Two seeds and small differences still do not establish a general advantage. A 60-document, excerpt-only AI-assisted audit was recorded for the length-balanced hypothesis; the human-label field remains empty, and those labels are not human ground truth.
 
+### Post-training two-seed ensemble
+
+The two validation-selected uniform checkpoints share the same tokenizer, model configuration, and byte-identical prepared train/validation/test corpora. Without additional training, `scripts/evaluate_ensemble.py` mixes their **predicted token probabilities** with fixed 0.5/0.5 weights. It scores each document independently with the same 1,024-token rolling context and 512-token stride used above. The script checks checkpoint steps, seeds, tokenizer and corpus hashes, and training settings before evaluation.
+
+| Full-corpus validation, 515,512 tokens | Seed 42 uniform | Seed 43 uniform | Equal-probability ensemble |
+|---|---:|---:|---:|
+| Perplexity, Mac MPS FP32 | 4.990135 | 5.079340 | **4.808751** |
+
+The ensemble lowered validation perplexity by **3.63%** relative to the better single model, and improved negative log-likelihood on all 60 validation documents. A retrospective test evaluation, with the 0.5/0.5 rule unchanged, gave **4.842947** versus **5.035461** for the better single model on the same Mac FP32 path; all 61 test documents improved. Component-model test results had already been seen during earlier experiments, so this test is reported as retrospective confirmation, not a fresh untouched holdout.
+
+This is an **inference-time ensemble**, not an improved single-model checkpoint. It requires two model forwards and both weight sets at inference; the gain must be weighed against latency and memory cost. The previous single-model training and sampling conclusions remain unchanged.
+
+The reproducible, path-free metric and hash summary is in [`reports/ensemble_seed42_seed43/summary.json`](reports/ensemble_seed42_seed43/summary.json); full document-level reports remain local because they contain machine-specific paths.
+
 ## Reproduce
 
 Use Python 3.11–3.13 and a CUDA-enabled PyTorch build compatible with your GPU. The measured environment used Python 3.11.8 and PyTorch 2.11.0+cu128. Install the project after PyTorch:
@@ -106,6 +120,18 @@ forgelm benchmark-decode \
 The measured run used a 100-step preflight and resumed the identical base configuration to step 4,800. Preflight steps were part of the 4,800-step prefix. Keep source code and the three experiment configurations unchanged after training starts: strict resume and controlled forking validate their fingerprints.
 
 To reproduce the seed-43 follow-up, use the four `configs/wikitext4090_lb_seed43_*.toml` files. Train the base to step 4,800, fork `uniform`, `quality_original`, and `quality_lengthbalanced` from its checkpoint, then run `evaluate --full-corpus` on all three and `compare-sampling` twice with uniform as the reference. Freeze the lowest full-validation-loss branch before calling `test` once. The seed-43 source fingerprint differs from seed 42, so its base must be trained independently rather than resumed from the older checkpoint.
+
+After obtaining both selected uniform checkpoints, reproduce the fixed ensemble on validation:
+
+~~~bash
+PYTHONPATH=src python scripts/evaluate_ensemble.py \
+  --checkpoint /path/to/seed42_uniform.pt \
+  --checkpoint /path/to/seed43_uniform.pt \
+  --tokenizer artifacts/wikitext4090_lb_seed43/base/tokenizer.json \
+  --jsonl artifacts/wikitext4090_lb_seed43/base/dataset/validation.jsonl \
+  --split validation --device auto \
+  --output artifacts/ensemble_seed42_seed43/validation.json
+~~~
 
 ## Verification and scope
 
